@@ -2100,6 +2100,10 @@ public class Sched {
      */
 
     private void _burySiblings(Card card) {
+        String model = card.model().optString("name");
+        if (model.endsWith("-ns")) {
+            return;
+        }
         LinkedList<Long> toBury = new LinkedList<>();
         JSONObject nconf = _newConf(card);
         boolean buryNew = nconf.optBoolean("bury", true);
