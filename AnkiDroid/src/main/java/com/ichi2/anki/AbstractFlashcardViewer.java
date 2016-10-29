@@ -2735,16 +2735,6 @@ public abstract class AbstractFlashcardViewer extends NavigationDrawerActivity {
             return false;
         }
 
-
-        @Override
-        public boolean onDoubleTap(MotionEvent e) {
-            if (mGesturesEnabled) {
-                executeCommand(mGestureDoubleTap);
-            }
-            return true;
-        }
-
-
         @Override
         public boolean onSingleTapUp(MotionEvent e) {
             if (mTouchStarted) {
