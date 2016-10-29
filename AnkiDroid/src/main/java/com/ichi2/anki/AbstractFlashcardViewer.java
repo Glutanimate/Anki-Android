@@ -2735,6 +2735,32 @@ public abstract class AbstractFlashcardViewer extends NavigationDrawerActivity {
             return false;
         }
 
+        private int zoomFct = 0;
+
+        @Override
+        public boolean onDoubleTap(MotionEvent e) {
+            // a very primitive zoom implementation
+            int toX = 0;
+            int toY = 0;
+            if (zoomFct == 0) {
+                mCard.zoomBy(2.0f);
+                zoomFct = 1;
+                toX = Math.round(e.getX());
+                toY = Math.round(e.getY());
+            } else if (zoomFct == 1) {
+                toX = Math.round(e.getX()) * 3;
+                toY = Math.round(e.getY()) * 3;
+                mCard.zoomBy(2.0f);
+                zoomFct = 2;
+            } else {
+                mCard.zoomBy(0.1f);
+                zoomFct = 0;
+            }
+            mCard.scrollTo(toX, toY);
+            return true;
+        }
+
+
         @Override
         public boolean onSingleTapUp(MotionEvent e) {
             if (mTouchStarted) {
