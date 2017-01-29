@@ -195,6 +195,7 @@ public abstract class AbstractFlashcardViewer extends NavigationDrawerActivity {
     private boolean mDoubleScrolling;
     private boolean mScrollingButtons;
     private boolean mGesturesEnabled;
+    private int mCurrentZoom;
     // Android WebView
     protected boolean mSpeakText;
     protected boolean mDisableClipboard = false;
@@ -1840,6 +1841,8 @@ public abstract class AbstractFlashcardViewer extends NavigationDrawerActivity {
         if (mPrefWhiteboard && mWhiteboard != null) {
             mWhiteboard.clear();
         }
+        // Reset zoom
+        mCurrentZoom = 0;
     }
 
 
@@ -2752,26 +2755,25 @@ public abstract class AbstractFlashcardViewer extends NavigationDrawerActivity {
             return false;
         }
 
-        private int zoomFct = 0;
 
         @Override
         public boolean onDoubleTap(MotionEvent e) {
             // a very primitive zoom implementation
             int toX = 0;
             int toY = 0;
-            if (zoomFct == 0) {
+            if (mCurrentZoom == 0) {
                 mCard.zoomBy(2.0f);
-                zoomFct = 1;
+                mCurrentZoom = 1;
                 toX = Math.round(e.getX());
                 toY = Math.round(e.getY());
-            } else if (zoomFct == 1) {
+            } else if (mCurrentZoom == 1) {
                 toX = Math.round(e.getX()) * 3;
                 toY = Math.round(e.getY()) * 3;
                 mCard.zoomBy(2.0f);
-                zoomFct = 2;
+                mCurrentZoom = 2;
             } else {
                 mCard.zoomBy(0.1f);
-                zoomFct = 0;
+                mCurrentZoom = 0;
             }
             mCard.scrollTo(toX, toY);
             return true;
