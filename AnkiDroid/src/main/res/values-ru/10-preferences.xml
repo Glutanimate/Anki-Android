@@ -90,10 +90,10 @@
   <string name="full_screen_system">Скрыть системную панель</string>
   <string name="full_screen_complete">Скрыть системную панель и панель кнопок ответа</string>
   <string name="full_screen_error_gestures">Вы должны включить жесты что бы скрыть панель кнопок ответа</string>
-  <string name="answer_buttons_position">Answer buttons position</string>
+  <string name="answer_buttons_position">Положение кнопок ответа</string>
   <string-array name="answer_buttons_position_labels">
-    <item>Top</item>
-    <item>Bottom</item>
+    <item>Сверху</item>
+    <item>Снизу</item>
   </string-array>
   <string name="gestures">Разрешить жесты</string>
   <string name="gestures_summ">Использовать жесты для таких действий, как ответ и редактирование карт.</string>
@@ -137,12 +137,12 @@
   <string name="notification_pref">Уведомления</string>
   <string name="notification_pref_title">Показывать если</string>
   <string name="never_notify">Никогда</string>
-  <string name="notify_when_pending">Есть карты в очереди</string>
+  <string name="notify_when_pending">Только системные уведомления</string>
   <string name="notification_minimum_cards_due">Более %d карт в очереди</string>
   <string name="notification_minimum_cards_due_vibrate">Вибрация</string>
   <string name="notification_minimum_cards_due_blink">Мерцание светодиода</string>
   <string name="timeout_answer_text">Автоматически показывать ответ</string>
-  <string name="timeout_answer_summ">Показать ответ автоматически без участия пользователя</string>
+  <string name="timeout_answer_summ">Show answer automatically without user input. Delay includes time for automatically played audio files.</string>
   <string name="timeout_answer_seconds">Время показа ответа</string>
   <string name="timeout_answer_seconds_summ">XXX сек.</string>
   <string name="timeout_question_seconds">Время показа следующего вопроса</string>
@@ -212,6 +212,7 @@
   <string name="deck_conf_rev_cards">Повторение</string>
   <string name="deck_conf_lps_cards">Ошибки</string>
   <string name="deck_conf_general">Общие</string>
+  <string name="deck_conf_reminders">Reminders</string>
   <string name="deck_conf_steps">Шаги (в минутах)</string>
   <string name="deck_conf_order">Очерёдность</string>
   <string name="deck_conf_new_cards_day">Новых карт в день</string>
@@ -265,6 +266,8 @@
   <string name="deck_conf_cram_order">Карты отобрать по</string>
   <string name="deck_conf_cram_reschedule">Перепланирование</string>
   <string name="deck_conf_cram_reschedule_summ">Перепланировать карты, основываясь на моих ответах в этой колоде</string>
-  <string name="deck_conf_cram_steps">Дополнительные шаги</string>
+  <string name="deck_conf_cram_steps">Custom steps (in minutes)</string>
   <string name="deck_conf_cram_steps_summ">Определить дополнительные шаги</string>
+  <string name="deck_conf_reminders_enabled">Enable reminder notifications for this deck</string>
+  <string name="deck_conf_reminders_time">Remind at</string>
 </resources>

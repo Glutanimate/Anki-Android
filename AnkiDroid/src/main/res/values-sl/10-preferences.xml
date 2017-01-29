@@ -90,10 +90,10 @@
   <string name="full_screen_system">Skrij sistemske vrstice</string>
   <string name="full_screen_complete">Skrij sistemske vrstice in gumbe za odgovor</string>
   <string name="full_screen_error_gestures">Za skritje gumbov za odgovor morate omogočiti poteze</string>
-  <string name="answer_buttons_position">Answer buttons position</string>
+  <string name="answer_buttons_position">Položaj gumbov za odgovarjanje</string>
   <string-array name="answer_buttons_position_labels">
-    <item>Top</item>
-    <item>Bottom</item>
+    <item>Zgoraj</item>
+    <item>Spodaj</item>
   </string-array>
   <string name="gestures">Omogoči poteze</string>
   <string name="gestures_summ">Dodeli poteze dejanjem, kot sta odgovarjanje in urejanje kartic.</string>
@@ -139,7 +139,7 @@
   <string name="notification_minimum_cards_due_vibrate">Vibriraj</string>
   <string name="notification_minimum_cards_due_blink">Utripaj lučko</string>
   <string name="timeout_answer_text">Sam. prikaži odgovor</string>
-  <string name="timeout_answer_summ">Samodejno prikaži odgovor brez posredovanja uporabnika</string>
+  <string name="timeout_answer_summ">Samodejno prikaži odgovor brez uporabniškega vnosa. Zakasnitev vključuje čas za samodejno predvajanje zvočnih datotek.</string>
   <string name="timeout_answer_seconds">Čas za prikaz odgovora</string>
   <string name="timeout_answer_seconds_summ">XXX s</string>
   <string name="timeout_question_seconds">Časa do naslednjega vprašanja</string>
@@ -206,6 +206,7 @@
   <string name="deck_conf_rev_cards">Pregledi</string>
   <string name="deck_conf_lps_cards">Spodrsljaji</string>
   <string name="deck_conf_general">Splošno</string>
+  <string name="deck_conf_reminders">Opomniki</string>
   <string name="deck_conf_steps">Koraki (v minutah)</string>
   <string name="deck_conf_order">Vrstni red</string>
   <string name="deck_conf_new_cards_day">Nove kartice/dan</string>
@@ -260,6 +261,8 @@
   <string name="deck_conf_cram_order">kartic, ki jih je izbral</string>
   <string name="deck_conf_cram_reschedule">Spremeni urnik</string>
   <string name="deck_conf_cram_reschedule_summ">Spremeni urnik kartic glede na moje odgovore v tem kompletu</string>
-  <string name="deck_conf_cram_steps">Koraki po meri</string>
+  <string name="deck_conf_cram_steps">Koraki po meri (v minutah)</string>
   <string name="deck_conf_cram_steps_summ">Določi korake po meri</string>
+  <string name="deck_conf_reminders_enabled">Omogoči opomnike za ta komplet</string>
+  <string name="deck_conf_reminders_time">Opomni ob</string>
 </resources>
