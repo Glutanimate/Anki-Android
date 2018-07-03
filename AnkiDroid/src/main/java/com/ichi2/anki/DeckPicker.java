@@ -22,7 +22,6 @@
 package com.ichi2.anki;
 
 import android.Manifest;
-import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -43,10 +42,10 @@ import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.DialogFragment;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentTransaction;
+import android.support.v4.app.ShareCompat;
 import android.support.v4.widget.SwipeRefreshLayout;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
-import android.text.Html;
 import android.text.TextUtils;
 import android.view.KeyEvent;
 import android.view.Menu;
@@ -402,23 +401,10 @@ public class DeckPicker extends NavigationDrawerActivity implements
             }
         });
 
-        // Setup the FloatingActionButtons
-        mActionsMenu = (FloatingActionsMenu) findViewById(R.id.add_content_menu);
-        if (mActionsMenu != null) {
-            mActionsMenu.findViewById(R.id.fab_expand_menu_button).setContentDescription(getString(R.string.menu_add));
-            configureFloatingActionsMenu();
-        } else {
-            // FloatingActionsMenu only works properly on Android 14+ so fallback on a context menu below API 14
-            Timber.w("Falling back on design support library FloatingActionButton");
-            android.support.design.widget.FloatingActionButton addButton;
-            addButton = (android.support.design.widget.FloatingActionButton)findViewById(R.id.add_note_action);
-            addButton.setOnClickListener(new OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    CompatHelper.getCompat().supportAddContentMenu(DeckPicker.this);
-                }
-            });
-        }
+        // Setup the FloatingActionButtons, should work everywhere with min API >= 15
+        mActionsMenu = findViewById(R.id.add_content_menu);
+        mActionsMenu.findViewById(R.id.fab_expand_menu_button).setContentDescription(getString(R.string.menu_add));
+        configureFloatingActionsMenu();
 
         mReviewSummaryTextView = (TextView) findViewById(R.id.today_stats_text_view);
 
@@ -440,11 +426,9 @@ public class DeckPicker extends NavigationDrawerActivity implements
                 onSdCardNotMounted();
             } else if (!CollectionHelper.isCurrentAnkiDroidDirAccessible(this)) {
                 // AnkiDroid directory inaccessible
-                Intent i = CompatHelper.getCompat().getPreferenceSubscreenIntent(this, "com.ichi2.anki.prefs.advanced");
+                Intent i = Preferences.getPreferenceSubscreenIntent(this, "com.ichi2.anki.prefs.advanced");
                 startActivityForResultWithoutAnimation(i, REQUEST_PATH_UPDATE);
                 Toast.makeText(this, R.string.directory_inaccessible, Toast.LENGTH_LONG).show();
-            } else if (CollectionHelper.getInstance().exceededCursorSizeLimit(this)) {
-                showDatabaseErrorDialog(DatabaseErrorDialog.DIALOG_CURSOR_SIZE_LIMIT_EXCEEDED);
             } else {
                 showDatabaseErrorDialog(DatabaseErrorDialog.DIALOG_LOAD_FAILED);
             }
@@ -801,11 +785,25 @@ public class DeckPicker extends NavigationDrawerActivity implements
         }
     }
 
-
     private void finishWithAnimation() {
         super.finishWithAnimation(ActivityTransitionAnimation.DOWN);
     }
 
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        switch(keyCode) {
+
+            case KeyEvent.KEYCODE_A:
+                addNote();
+                break;
+
+            case KeyEvent.KEYCODE_B:
+                openCardBrowser();
+                break;
+        }
+
+        return super.onKeyUp(keyCode, event);
+    }
 
     // ----------------------------------------------------------------------------
     // CUSTOM METHODS
@@ -1090,15 +1088,19 @@ public class DeckPicker extends NavigationDrawerActivity implements
      *  Show a simple snackbar message or notification if the activity is not in foreground
      * @param messageResource String resource for message
      */
-    private void showSyncLogMessage(int messageResource) {
+    private void showSyncLogMessage(int messageResource, String syncMessage) {
         if (mActivityPaused) {
             Resources res = AnkiDroidApp.getAppResources();
             showSimpleNotification(res.getString(R.string.app_name), res.getString(messageResource));
         } else {
-            UIUtils.showSimpleSnackbar(this, messageResource, false);
+            if (syncMessage == null || syncMessage.length() == 0) {
+                UIUtils.showSimpleSnackbar(this, messageResource, false);
+            } else {
+                Resources res = AnkiDroidApp.getAppResources();
+                showSimpleMessageDialog(res.getString(messageResource), syncMessage, false);
+            }
         }
     }
-
 
     @Override
     public void showImportDialog(int id) {
@@ -1312,13 +1314,13 @@ public class DeckPicker extends NavigationDrawerActivity implements
 
         @Override
         public void onDisconnected() {
-            showSyncLogMessage(R.string.youre_offline);
+            showSyncLogMessage(R.string.youre_offline, "");
         }
 
         @Override
         public void onCancelled() {
             mProgressDialog.dismiss();
-            showSyncLogMessage(R.string.sync_cancelled);
+            showSyncLogMessage(R.string.sync_cancelled, "");
             // update deck list in case sync was cancelled during media sync and main sync was actually successful
             updateDeckList();
         }
@@ -1447,7 +1449,7 @@ public class DeckPicker extends NavigationDrawerActivity implements
                         showSyncErrorDialog(SyncErrorDialog.DIALOG_USER_NOT_LOGGED_IN_SYNC);
                     } else if (resultType.equals("noChanges")) {
                         // show no changes message, use false flag so we don't show "sync error" as the Dialog title
-                        showSyncLogMessage(R.string.sync_no_changes_message);
+                        showSyncLogMessage(R.string.sync_no_changes_message, "");
                     } else if (resultType.equals("clockOff")) {
                         long diff = (Long) result[1];
                         if (diff >= 86100) {
@@ -1538,22 +1540,25 @@ public class DeckPicker extends NavigationDrawerActivity implements
                     }
                 }
             } else {
+                // Sync was successful!
                 if (data.data[2] != null && !data.data[2].equals("")) {
+                    // There was a media error, so show it
                     String message = res.getString(R.string.sync_database_acknowledge) + "\n\n" + data.data[2];
                     showSimpleMessageDialog(message);
                 } else if (data.data.length > 0 && data.data[0] instanceof String
                         && ((String) data.data[0]).length() > 0) {
+                    // A full sync occurred
                     String dataString = (String) data.data[0];
                     if (dataString.equals("upload")) {
-                        showSyncLogMessage(R.string.sync_log_uploading_message);
+                        showSyncLogMessage(R.string.sync_log_uploading_message, syncMessage);
                     } else if (dataString.equals("download")) {
-                        showSyncLogMessage(R.string.sync_log_downloading_message);
-                        // set downloaded collection as current one
+                        showSyncLogMessage(R.string.sync_log_downloading_message, syncMessage);
                     } else {
-                        showSyncLogMessage(R.string.sync_database_acknowledge);
+                        showSyncLogMessage(R.string.sync_database_acknowledge, syncMessage);
                     }
                 } else {
-                    showSyncLogMessage(R.string.sync_database_acknowledge);
+                    // Regular sync completed successfully
+                    showSyncLogMessage(R.string.sync_database_acknowledge, syncMessage);
                 }
                 updateDeckList();
                 WidgetStatus.update(DeckPicker.this);
@@ -1608,9 +1613,8 @@ public class DeckPicker extends NavigationDrawerActivity implements
 
     @Override
     public void exportApkg(String filename, Long did, boolean includeSched, boolean includeMedia) {
-        // get export path
-        File colPath = new File(getCol().getPath());
-        File exportDir = new File(colPath.getParentFile(), "export");
+        // Export the file to sdcard/AnkiDroid/export regardless of actual col directory, so that we can use FileProvider API
+        File exportDir = new File(CollectionHelper.getDefaultAnkiDroidDirectory(), "export");
         exportDir.mkdirs();
         File exportPath;
         if (filename != null) {
@@ -1628,6 +1632,7 @@ public class DeckPicker extends NavigationDrawerActivity implements
             exportPath = new File(exportDir, "All Decks.apkg");
         } else {
             // full collection export -- use "collection.apkg"
+            File colPath = new File(getCol().getPath());
             exportPath = new File(exportDir, colPath.getName().replace(".anki2", ".apkg"));
         }
         // add input arguments to new generic structure
@@ -1642,19 +1647,33 @@ public class DeckPicker extends NavigationDrawerActivity implements
 
 
     public void emailFile(String path) {
-        Intent intent = new Intent(Intent.ACTION_SEND);
-        intent.setType("message/rfc822");
-        intent.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.export_email_subject));
-        intent.putExtra(Intent.EXTRA_TEXT, Html.fromHtml(getString(R.string.export_email_text)));
+        // Make sure the file actually exists
         File attachment = new File(path);
-        if (attachment.exists()) {
-            Uri uri = Uri.fromFile(attachment);
-            intent.putExtra(Intent.EXTRA_STREAM, uri);
+        if (!attachment.exists()) {
+            Timber.e("Specified apkg file %s does not exist", path);
+            UIUtils.showThemedToast(this, getResources().getString(R.string.apk_share_error), false);
+            return;
         }
+        // Get a URI for the file to be shared via the FileProvider API
+        Uri uri;
         try {
-            startActivityWithoutAnimation(intent);
-        } catch (ActivityNotFoundException e) {
-            UIUtils.showThemedToast(this, getResources().getString(R.string.no_email_client), false);
+            uri = CompatHelper.getCompat().getExportUri(DeckPicker.this, attachment);
+        } catch (IllegalArgumentException e) {
+            Timber.e("Could not generate a valid URI for the apkg file");
+            UIUtils.showThemedToast(this, getResources().getString(R.string.apk_share_error), false);
+            return;
+        }
+        Intent shareIntent = ShareCompat.IntentBuilder.from(DeckPicker.this)
+                .setType("application/apkg")
+                .setStream(uri)
+                .setSubject(getString(R.string.export_email_subject, attachment.getName()))
+                .setHtmlText(getString(R.string.export_email_text))
+                .getIntent();
+        if (shareIntent.resolveActivity(getPackageManager()) != null) {
+            startActivityWithoutAnimation(shareIntent);
+        } else {
+            Timber.e("Could not find appropriate application to share apkg with");
+            UIUtils.showThemedToast(this, getResources().getString(R.string.apk_share_error), false);
         }
     }
 
@@ -2164,27 +2183,9 @@ public class DeckPicker extends NavigationDrawerActivity implements
     }
 
     /**
-     * FAB can't be animated to move out of the way of the snackbar button on API < 11
+     * There was pre-honeycomb override here, removed now, just instantiate regular callback
      */
-    Snackbar.Callback mSnackbarShowHideCallback = new Snackbar.Callback() {
-        @Override
-        public void onDismissed(Snackbar snackbar, int event) {
-            if (!CompatHelper.isHoneycomb()) {
-                final android.support.design.widget.FloatingActionButton b;
-                b = (android.support.design.widget.FloatingActionButton) findViewById(R.id.add_note_action);
-                b.setEnabled(true);
-            }
-        }
-
-        @Override
-        public void onShown(Snackbar snackbar) {
-            if (!CompatHelper.isHoneycomb()) {
-                final android.support.design.widget.FloatingActionButton b;
-                b = (android.support.design.widget.FloatingActionButton) findViewById(R.id.add_note_action);
-                b.setEnabled(false);
-            }
-        }
-    };
+    Snackbar.Callback mSnackbarShowHideCallback = new Snackbar.Callback();
 
     public void handleEmptyCards() {
         DeckTask.launchDeckTask(DeckTask.TASK_TYPE_FIND_EMPTY_CARDS, new DeckTask.Listener() {
@@ -2201,15 +2202,17 @@ public class DeckPicker extends NavigationDrawerActivity implements
                     showSimpleMessageDialog(getResources().getString(R.string.empty_cards_none));
                 } else {
                     String msg = String.format(getResources().getString(R.string.empty_cards_count), cids.size());
-                    ConfirmationDialog dialog = new ConfirmationDialog() {
+                    ConfirmationDialog dialog = new ConfirmationDialog();
+                    dialog.setArgs(msg);
+                    Runnable confirm = new Runnable() {
                         @Override
-                        public void confirm() {
+                        public void run() {
                             getCol().remCards(Utils.arrayList2array(cids));
                             UIUtils.showSimpleSnackbar(DeckPicker.this, String.format(
                                     getResources().getString(R.string.empty_cards_deleted), cids.size()), false);
                         }
                     };
-                    dialog.setArgs(msg);
+                    dialog.setConfirm(confirm);
                     showDialogFragment(dialog);
                 }
 

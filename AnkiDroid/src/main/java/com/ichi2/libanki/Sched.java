@@ -267,12 +267,16 @@ public class Sched {
 
 
     public void unburyCardsForDeck() {
-        String sids = Utils.ids2str(mCol.getDecks().active());
+        unburyCardsForDeck(mCol.getDecks().active());
+    }
+
+    private void unburyCardsForDeck(List<Long> allDecks) {
+        // Refactored to allow unburying an arbitrary deck
+        String sids = Utils.ids2str(allDecks);
         mCol.log(mCol.getDb().queryColumn(Long.class, "select id from cards where queue = -2 and did in " + sids, 0));
         mCol.getDb().execute("update cards set mod=?,usn=?,queue=type where queue = -2 and did in " + sids,
                 new Object[] { Utils.intNow(), mCol.usn() });
     }
-
 
     /**
      * Rev/lrn/time daily stats *************************************************
@@ -1948,7 +1952,12 @@ public class Sched {
 
 
     public boolean haveBuried() {
-        String sdids = Utils.ids2str(mCol.getDecks().active());
+        return haveBuried(mCol.getDecks().active());
+    }
+
+    private boolean haveBuried(List<Long> allDecks) {
+        // Refactored to allow querying an arbitrary deck
+        String sdids = Utils.ids2str(allDecks);
         int cnt = mCol.getDb().queryScalar(String.format(Locale.US,
                 "select 1 from cards where queue = -2 and did in %s limit 1", sdids));
         return cnt != 0;
@@ -1973,7 +1982,7 @@ public class Sched {
      * @return A string like “1 min” or “1.7 mo”
      */
     public String nextIvlStr(Context context, Card card, int ease) {
-        int ivl = nextIvl(card, ease);
+        long ivl = nextIvl(card, ease);
         if (ivl == 0) {
             return context.getString(R.string.sched_end);
         }
@@ -1992,7 +2001,7 @@ public class Sched {
     /**
      * Return the next interval for CARD, in seconds.
      */
-    public int nextIvl(Card card, int ease) {
+    public long nextIvl(Card card, int ease) {
         try {
             if (card.getQueue() == 0 || card.getQueue() == 1 || card.getQueue() == 3) {
                 return _nextLrnIvl(card, ease);
@@ -2000,12 +2009,12 @@ public class Sched {
                 // lapsed
                 JSONObject conf = _lapseConf(card);
                 if (conf.getJSONArray("delays").length() > 0) {
-                    return (int) (conf.getJSONArray("delays").getDouble(0) * 60.0);
+                    return (long) (conf.getJSONArray("delays").getDouble(0) * 60.0);
                 }
-                return _nextLapseIvl(card, conf) * 86400;
+                return _nextLapseIvl(card, conf) * 86400L;
             } else {
                 // review
-                return _nextRevIvl(card, ease) * 86400;
+                return _nextRevIvl(card, ease) * 86400L;
             }
         } catch (JSONException e) {
             throw new RuntimeException(e);
@@ -2013,7 +2022,7 @@ public class Sched {
     }
 
 
-    private int _nextLrnIvl(Card card, int ease) {
+    private long _nextLrnIvl(Card card, int ease) {
         // this isn't easily extracted from the learn code
         if (card.getQueue() == 0) {
             card.setLeft(_startingLeft(card));
@@ -2028,7 +2037,7 @@ public class Sched {
                 if (!_resched(card)) {
                     return 0;
                 }
-                return _graduatingIvl(card, conf, true, false) * 86400;
+                return _graduatingIvl(card, conf, true, false) * 86400L;
             } else {
                 int left = card.getLeft() % 1000 - 1;
                 if (left <= 0) {
@@ -2036,7 +2045,7 @@ public class Sched {
                     if (!_resched(card)) {
                         return 0;
                     }
-                    return _graduatingIvl(card, conf, false, false) * 86400;
+                    return _graduatingIvl(card, conf, false, false) * 86400L;
                 } else {
                     return _delayForGrade(conf, left);
                 }
@@ -2317,20 +2326,16 @@ public class Sched {
      * The methods below are not in LibAnki.
      * ***********************************************************
      */
-
     public boolean haveBuried(long did) {
-        long odid = mCol.getDecks().selected();
-        mCol.getDecks().select(did);
-        boolean buried = haveBuried();
-        mCol.getDecks().select(odid);
-        return buried;
+        List<Long> all = new ArrayList<>(mCol.getDecks().children(did).values());
+        all.add(did);
+        return haveBuried(all);
     }
 
     public void unburyCardsForDeck(long did) {
-        long odid = mCol.getDecks().selected();
-        mCol.getDecks().select(did);
-        unburyCardsForDeck();
-        mCol.getDecks().select(odid);
+        List<Long> all = new ArrayList<>(mCol.getDecks().children(did).values());
+        all.add(did);
+        unburyCardsForDeck(all);
     }
 
 

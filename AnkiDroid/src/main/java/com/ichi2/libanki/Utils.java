@@ -26,10 +26,8 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.Resources;
 import android.net.Uri;
+import android.support.annotation.NonNull;
 import android.text.Html;
-import android.view.View;
-import android.widget.FrameLayout;
-import android.widget.LinearLayout;
 
 import com.ichi2.anki.AnkiFont;
 import com.ichi2.anki.CollectionHelper;
@@ -43,14 +41,12 @@ import org.json.JSONObject;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -70,13 +66,11 @@ import java.util.Calendar;
 import java.util.Collection;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 import java.util.TimeZone;
-import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.Deflater;
@@ -143,7 +137,7 @@ public class Utils {
      * @param time_s The time to format, in seconds
      * @return The time quantity string. Something like "3 s" or "1.7 yr".
      */
-    public static String timeQuantity(Context context, int time_s) {
+    public static String timeQuantity(Context context, long time_s) {
         Resources res = context.getResources();
         // N.B.: the integer s, min, h, d and (one decimal, rounded by format) double for month, year is
         // hard-coded. See also 01-core.xml
@@ -170,11 +164,12 @@ public class Utils {
      * @param time_s The time to format, in seconds
      * @return The formatted, localized time string. The time is always an integer.
      */
-    public static String timeSpan(Context context, int time_s) {
+    public static String timeSpan(Context context, long time_s) {
         int time_x;  // Time in unit x
         Resources res = context.getResources();
         if (Math.abs(time_s) < TIME_MINUTE ) {
-            return res.getQuantityString(R.plurals.time_span_seconds, time_s, time_s);
+            time_x = (int) time_s;
+            return res.getQuantityString(R.plurals.time_span_seconds, time_x, time_x);
         } else if (Math.abs(time_s) < TIME_HOUR) {
             time_x = (int) Math.round(time_s/TIME_MINUTE);
             return res.getQuantityString(R.plurals.time_span_minutes, time_x, time_x);
@@ -200,7 +195,7 @@ public class Utils {
      * @param time_s The time to format, in seconds
      * @return The formatted, localized time string. The time is always a float.
      */
-    public static String roundedTimeSpan(Context context, int time_s) {
+    public static String roundedTimeSpan(Context context, long time_s) {
         if (Math.abs(time_s) < TIME_DAY) {
             return context.getResources().getString(R.string.stats_overview_hours, time_s/TIME_HOUR);
         } else if (Math.abs(time_s) < TIME_MONTH) {
@@ -637,6 +632,11 @@ public class Utils {
                         name = zipEntryToFilenameMap.get(name);
                     }
                     File destFile = new File(dir, name);
+                    if (!isInside(destFile, dir)) {
+                        Timber.e("Refusing to decompress invalid path: " + destFile.getCanonicalPath());
+                        throw new IOException("File is outside extraction target directory.");
+                    }
+
                     if (!ze.isDirectory()) {
                         Timber.i("uncompress %s", name);
                         zis = new BufferedInputStream(zipFile.getInputStream(ze));
@@ -659,6 +659,18 @@ public class Utils {
                 zis.close();
             }
         }
+    }
+
+    /**
+     * Checks to see if a given file path resides inside a given directory.
+     * Useful for protection against path traversal attacks prior to creating the file
+     * @param file the file with an uncertain filesystem location
+     * @param dir the directory that should contain the file
+     * @return true if the file path is inside the directory
+     * @exception IOException if there are security or filesystem issues determining the paths
+     */
+    public static boolean isInside(@NonNull File file, @NonNull File dir) throws IOException {
+        return file.getCanonicalPath().startsWith(dir.getCanonicalPath());
     }
 
     /**
@@ -691,41 +703,73 @@ public class Utils {
         return bos.toByteArray();
     }
 
+    /**
+     * Calls {@link #writeToFileImpl(InputStream, String)} and handles IOExceptions
+     * @throws IOException Rethrows exception after a set number of retries
+     */
+    public static void writeToFile(InputStream source, String destination) throws IOException {
+        // sometimes this fails and works on retries (hardware issue?)
+        final int retries = 5;
+        int retryCnt = 0;
+        boolean success = false;
+        while (!success && retryCnt++ < retries) {
+            try {
+                writeToFileImpl(source, destination);
+                success = true;
+            } catch (IOException e) {
+                if (retryCnt == retries) {
+                    throw e;
+                } else {
+                    Timber.e("IOException while writing to file, retrying...");
+                    try {
+                        Thread.sleep(200);
+                    } catch (InterruptedException e1) {
+                        e1.printStackTrace();
+                    }
+                }
+            }
+        }
+    }
 
     /**
      * Utility method to write to a file.
      * Throws the exception, so we can report it in syncing log
      * @throws IOException
      */
-    public static void writeToFile(InputStream source, String destination) throws IOException {
-        Timber.d("Creating new file... = %s", destination);
-        new File(destination).createNewFile();
+    public static void writeToFileImpl(InputStream source, String destination) throws IOException {
+        File f = new File(destination);
+        try {
+            Timber.d("Creating new file... = %s", destination);
+            f.createNewFile();
 
-        long startTimeMillis = System.currentTimeMillis();
-        OutputStream output = new BufferedOutputStream(new FileOutputStream(destination));
+            long startTimeMillis = System.currentTimeMillis();
+            OutputStream output = new BufferedOutputStream(new FileOutputStream(destination));
 
-        // Transfer bytes, from source to destination.
-        byte[] buf = new byte[CHUNK_SIZE];
-        long sizeBytes = 0;
-        int len;
-        if (source == null) {
-            Timber.e("writeToFile :: source is null!");
-        }
-        while ((len = source.read(buf)) >= 0) {
-            output.write(buf, 0, len);
-            sizeBytes += len;
-        }
-        long endTimeMillis = System.currentTimeMillis();
+            // Transfer bytes, from source to destination.
+            byte[] buf = new byte[CHUNK_SIZE];
+            long sizeBytes = 0;
+            int len;
+            if (source == null) {
+                Timber.e("writeToFile :: source is null!");
+            }
+            while ((len = source.read(buf)) >= 0) {
+                output.write(buf, 0, len);
+                sizeBytes += len;
+            }
+            long endTimeMillis = System.currentTimeMillis();
 
-        Timber.d("Finished writeToFile!");
-        long durationSeconds = (endTimeMillis - startTimeMillis) / 1000;
-        long sizeKb = sizeBytes / 1024;
-        long speedKbSec = 0;
-        if (endTimeMillis != startTimeMillis) {
-            speedKbSec = sizeKb * 1000 / (endTimeMillis - startTimeMillis);
+            Timber.d("Finished writeToFile!");
+            long durationSeconds = (endTimeMillis - startTimeMillis) / 1000;
+            long sizeKb = sizeBytes / 1024;
+            long speedKbSec = 0;
+            if (endTimeMillis != startTimeMillis) {
+                speedKbSec = sizeKb * 1000 / (endTimeMillis - startTimeMillis);
+            }
+            Timber.d("Utils.writeToFile: Size: %d Kb, Duration: %d s, Speed: %d Kb/s", sizeKb, durationSeconds, speedKbSec);
+            output.close();
+        } catch (IOException e) {
+            throw new IOException(f.getName() + ": " + e.getLocalizedMessage(), e);
         }
-        Timber.d("Utils.writeToFile: Size: %d Kb, Duration: %d s, Speed: %d Kb/s", sizeKb, durationSeconds, speedKbSec);
-        output.close();
     }
 
 

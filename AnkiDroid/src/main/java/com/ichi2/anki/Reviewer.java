@@ -26,6 +26,7 @@ import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
+import android.os.Bundle;
 import android.support.v4.content.ContextCompat;
 import android.support.v4.view.ActionProvider;
 import android.support.v4.view.MenuItemCompat;
@@ -43,12 +44,14 @@ import com.ichi2.compat.CompatHelper;
 import com.ichi2.libanki.Card;
 import com.ichi2.libanki.Collection;
 import com.ichi2.libanki.Collection.DismissType;
+import com.ichi2.libanki.Sched;
 import com.ichi2.themes.Themes;
 import com.ichi2.widget.WidgetStatus;
 
 import org.json.JSONException;
 
 import java.lang.ref.WeakReference;
+import java.text.MessageFormat;
 import java.util.List;
 
 import timber.log.Timber;
@@ -60,6 +63,39 @@ public class Reviewer extends AbstractFlashcardViewer {
     private boolean mPrefFullscreenReview = false;
     private static final int ADD_NOTE = 12;
     private Long mLastSelectedBrowserDid = null;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        Timber.d("onCreate()");
+
+        if (Intent.ACTION_VIEW.equals(getIntent().getAction())) {
+            Timber.d("onCreate() :: received Intent with action = %s", getIntent().getAction());
+            selectDeckFromExtra();
+        }
+
+        super.onCreate(savedInstanceState);
+    }
+
+    private void selectDeckFromExtra() {
+        Bundle extras = getIntent().getExtras();
+        long did = extras.getLong("deckId", Long.MIN_VALUE);
+
+        if(did == Long.MIN_VALUE) {
+            // deckId is not set, load default
+            return;
+        }
+
+        Timber.d("selectDeckFromExtra() with deckId = %d", did);
+
+        // Clear the undo history when selecting a new deck
+        if (getCol().getDecks().selected() != did) {
+            getCol().clearUndo();
+        }
+        // Select the deck
+        getCol().getDecks().select(did);
+        // Reset the schedule so that we get the counts for the currently selected deck
+        getCol().getSched().reset();
+    }
 
     @Override
     protected void setTitle() {
@@ -295,10 +331,6 @@ public class Reviewer extends AbstractFlashcardViewer {
         } else {
             menu.findItem(R.id.action_enable_whiteboard).setTitle(R.string.enable_whiteboard);
         }
-        if (!CompatHelper.isHoneycomb() && !mDisableClipboard) {
-            menu.findItem(R.id.action_search_dictionary).setVisible(true).setEnabled(!(mPrefWhiteboard && mShowWhiteboard))
-                    .setTitle(clipboardHasText() ? Lookup.getSearchStringTitle() : res.getString(R.string.menu_select));
-        }
         if (getCol().getDecks().isDyn(getParentDid())) {
             menu.findItem(R.id.action_open_deck_options).setVisible(false);
         }
@@ -310,10 +342,10 @@ public class Reviewer extends AbstractFlashcardViewer {
         MenuItemCompat.setActionProvider(menu.findItem(R.id.action_suspend), new SuspendProvider(this));
         MenuItemCompat.setActionProvider(menu.findItem(R.id.action_bury), new BuryProvider(this));
         if (dismissNoteAvailable(DismissType.SUSPEND_NOTE)) {
-            menu.findItem(R.id.action_suspend).setIcon(R.drawable.ic_lock_outline_white_24px_dropdown);
+            menu.findItem(R.id.action_suspend).setIcon(R.drawable.ic_action_suspend_dropdown);
             menu.findItem(R.id.action_suspend).setTitle(R.string.menu_suspend);
         } else {
-            menu.findItem(R.id.action_suspend).setIcon(R.drawable.ic_lock_outline_white_24dp);
+            menu.findItem(R.id.action_suspend).setIcon(R.drawable.ic_action_suspend);
             menu.findItem(R.id.action_suspend).setTitle(R.string.menu_suspend_card);
         }
         if (dismissNoteAvailable(DismissType.BURY_NOTE)) {
@@ -332,19 +364,19 @@ public class Reviewer extends AbstractFlashcardViewer {
         char keyPressed = (char) event.getUnicodeChar();
         if (mAnswerField != null && !mAnswerField.isFocused()) {
 	        if (sDisplayAnswer) {
-	            if (keyPressed == '1') {
+	            if (keyPressed == '1' || keyCode == KeyEvent.KEYCODE_BUTTON_Y) {
 	                answerCard(EASE_1);
 	                return true;
 	            }
-	            if (keyPressed == '2') {
+	            if (keyPressed == '2' || keyCode == KeyEvent.KEYCODE_BUTTON_X) {
 	                answerCard(EASE_2);
 	                return true;
 	            }
-	            if (keyPressed == '3') {
+	            if (keyPressed == '3' || keyCode == KeyEvent.KEYCODE_BUTTON_B) {
 	                answerCard(EASE_3);
 	                return true;
 	            }
-	            if (keyPressed == '4') {
+	            if (keyPressed == '4' || keyCode == KeyEvent.KEYCODE_BUTTON_A) {
 	                answerCard(EASE_4);
 	                return true;
 	            }
@@ -353,6 +385,13 @@ public class Reviewer extends AbstractFlashcardViewer {
 	                return true;
 	            }
 	        }
+                else {
+                    if (keyCode == KeyEvent.KEYCODE_BUTTON_Y || keyCode == KeyEvent.KEYCODE_BUTTON_X
+                            || keyCode == KeyEvent.KEYCODE_BUTTON_B || keyCode == KeyEvent.KEYCODE_BUTTON_A) {
+                        displayCardAnswer();
+                        return true;
+                    }
+                }
 	        if (keyPressed == 'e') {
 	            editCard();
 	            return true;

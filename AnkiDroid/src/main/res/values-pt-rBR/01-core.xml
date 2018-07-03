@@ -134,7 +134,7 @@
   <string name="studyoptions_empty_schedule">Sem cartões programados para estudar</string>
   <string name="studyoptions_congrats_finished">Parabéns! Você terminou por enquanto.</string>
   <string name="studyoptions_congrats_more_rev">O limite de hoje foi atingido, mas ainda existem cartões para serem revistos. Você pode aumentar o limite nas opções.</string>
-  <string name="studyoptions_congrats_more_new">O limite de hoje foi atingido. Ainda existem novos cartões; você pode aumentar o limite nas opçòes, mas isso irá aumentar a sua carga de revisões a curto prazo.</string>
+  <string name="studyoptions_congrats_more_new">O limite de hoje foi atingido. Ainda existem novos cartões; você pode aumentar o limite nas opções, mas isso irá aumentar a sua carga de revisões a curto prazo.</string>
   <string name="studyoptions_congrats_custom">Para estudar fora do agendamento normal, toque no botão \"Estudo personalizado\".</string>
   <string name="studyoptions_no_cards_due">Nenhum cartão está programado por enquanto.</string>
   <string name="sd_card_not_mounted">Armazenamento do dispositivo não montado</string>
@@ -162,5 +162,5 @@
   <string name="card_template_editor_would_delete_note">Excluir este tipo de cartão resultaria na remoção de uma ou mais notas. Por favor, crie primeiro um novo tipo de cartão.</string>
   <!-- Permissions -->
   <string name="read_write_permission_label">Ler e escrever para o banco de dados do AnkiDroid</string>
-  <string name="read_write_permission_description">Permitir que o aplicativo seja capaz de acessar notas, cartões,        modelos e baralhos existentes, bem como criar novos.</string>
+  <string name="read_write_permission_description">acessar as notas, cartas, modelos, e baralhos existentes, bem como criar novos</string>
 </resources>
