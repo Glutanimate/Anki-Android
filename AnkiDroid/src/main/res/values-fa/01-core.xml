@@ -142,7 +142,7 @@
   <string name="cancel_sync_confirm">آیا می خواهید همگام سازی را متوقف کنید؟</string>
   <string name="continue_sync">ادامه همگام سازی</string>
   <string name="sync_cancelled">همگام سازی لغو شد</string>
-  <string name="sync_cancel_message">در حال لغو کردن...\nممکن اس کمی زمان بر باشد.</string>
+  <string name="sync_cancel_message">در حال لغو کردن...\nممکن است کمی زمان بر باشد.</string>
   <string name="export">صادر کردن</string>
   <string name="export_collection">صادر کردن مجموعه فلش کارتها</string>
   <string name="export_deck">صادر کردن دسته</string>
@@ -162,5 +162,5 @@
   <string name="card_template_editor_would_delete_note">پاکسازی این نوع کارت ممکن است منجر به پاک شدن یک یا تعدادی یادداشت شود.لطفاً در ابتدا یک نوع کارت بسازید. </string>
   <!-- Permissions -->
   <string name="read_write_permission_label">خواندن و نوشتن داده ها روی AnkiDroid</string>
-  <string name="read_write_permission_description">به برنامه اجازه دهید تا به یادداشتهای موجود،کارت ها، نوع یادداشتها و دسته ها و همچنین ایجاد موارد جدید دسترسی داشته باشد</string>
+  <string name="read_write_permission_description">به یادداشتهای موجود، کارت ها، نوع یادداشتها و دسته ها و همچنین ایجاد موارد جدید دسترسی داشته باشید</string>
 </resources>

@@ -22,8 +22,8 @@
           xmlns:tools="http://schemas.android.com/tools"
           package="com.ichi2.anki"
           android:installLocation="auto"
-          android:versionCode="20800300"
-          android:versionName="2.8">
+          android:versionCode="20900124"
+          android:versionName="2.9alpha24">
 
     <!--
         The version number is of the form:
@@ -74,7 +74,8 @@
     <application
         android:name="com.ichi2.anki.AnkiDroidApp"
         android:allowBackup="true"
-        android:icon="@drawable/anki"
+        android:icon="@mipmap/anki"
+        android:roundIcon="@mipmap/anki_round"
         android:label="@string/app_name"
         android:windowSoftInputMode="adjustResize"
         android:largeHeap="true">
@@ -119,6 +120,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/apkg"/>
+                <data android:mimeType="application/vnd.anki"/>
                 <data android:mimeType="application/x-apkg"/>
                 <data android:mimeType="application/octet-stream" android:scheme="content"/>
                 <data android:mimeType="application/zip" android:scheme="content"/>
@@ -150,7 +152,7 @@
         </activity>
         <activity
             android:name="com.ichi2.anki.CardBrowser"
-            android:exported="false"
+            android:exported="true"
             android:configChanges="keyboardHidden|orientation|locale|screenSize"
             android:label="Card Browser"
             android:parentActivityName=".DeckPicker">
@@ -158,6 +160,11 @@
             <meta-data
                 android:name="android.support.PARENT_ACTIVITY"
                 android:value="com.ichi2.anki.DeckPicker" />
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
         <activity
         android:name=".ModelBrowser"
@@ -170,7 +177,7 @@
             android:label="@string/model_editor_label" />
         <activity
             android:name="com.ichi2.anki.Reviewer"
-            android:exported="false"
+            android:exported="true"
             android:configChanges="keyboardHidden|orientation|locale|screenSize"
             android:windowSoftInputMode="adjustResize"
             android:parentActivityName=".DeckPicker">
@@ -178,6 +185,10 @@
             <meta-data
                 android:name="android.support.PARENT_ACTIVITY"
                 android:value="com.ichi2.anki.DeckPicker" />
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
         <activity
             android:name="com.ichi2.anki.VideoPlayer"
@@ -295,11 +306,13 @@
             </intent-filter>
         </receiver>
 
+        <receiver android:name=".receiver.NotificationReceiver"
+            android:enabled="true"
+            android:exported="false" />
         <receiver
             android:name=".receiver.ReminderReceiver"
             android:enabled="true"
-            android:exported="false">
-        </receiver>
+            android:exported="false" />
         <receiver
             android:name=".receiver.BootReceiver"
             android:enabled="true"
@@ -357,6 +370,16 @@
             android:enabled="true"
             android:exported="true" >
             <meta-data android:name="com.ichi2.anki.provider.spec" android:value="2" />
+        </provider>
+
+        <provider
+            android:name="android.support.v4.content.FileProvider"
+            android:authorities="com.ichi2.anki.apkgfileprovider"
+            android:grantUriPermissions="true"
+            android:exported="false">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/filepaths" />
         </provider>
     </application>
 

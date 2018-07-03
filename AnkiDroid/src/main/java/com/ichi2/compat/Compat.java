@@ -17,9 +17,7 @@
 package com.ichi2.compat;
 
 import android.content.Context;
-import android.content.Intent;
 import android.net.Uri;
-import android.speech.tts.TextToSpeech;
 import android.view.View;
 import android.view.Window;
 import android.webkit.WebSettings;
@@ -27,7 +25,8 @@ import android.widget.RemoteViews;
 
 import com.ichi2.anki.AbstractFlashcardViewer;
 import com.ichi2.anki.AnkiActivity;
-import com.ichi2.anki.DeckPicker;
+
+import java.io.File;
 
 import io.requery.android.database.sqlite.SQLiteDatabase;
 
@@ -37,7 +36,7 @@ import io.requery.android.database.sqlite.SQLiteDatabase;
  * A set of implementations for the supported platforms are available.
  * <p>
  * Each implementation ends with a {@code V<n>} prefix, identifying the minimum API version on which this implementation
- * can be used. For example, see {@link CompatV10}.
+ * can be used. For example, see {@link CompatV15}.
  * <p>
  * Each implementation should extend the previous implementation and implement this interface.
  * <p>
@@ -46,28 +45,31 @@ import io.requery.android.database.sqlite.SQLiteDatabase;
  * Methods not supported by its API will default to the empty implementations of CompatV8.  Methods first supported
  * by lower APIs will default to those implementations since we extended them.
  * <p>
- * Example: CompatV9 extends CompatV8. This means that the nfcNormalized function that uses classes only available
- * in API 9, should be implemented properly in CompatV9 with @Override annotation. On the other hand a method
- * like setOverScrollModeNever that first becomes available in API 9 need not be implemented again in CompatV10,
+ * Example: CompatV21 extends CompatV19. This means that the setSelectableBackground function using APIs only available
+ * in API 21, should be implemented properly in CompatV19 with @Override annotation. On the other hand a method
+ * like showViewWithAnimation that first becomes available in API 19 need not be implemented again in CompatV21,
  * unless the behaviour is supposed to be different there.
  */
 public interface Compat {
+
+    /* Mock the Intent PROCESS_TEXT constants introduced in API 23. */
+    String ACTION_PROCESS_TEXT = "android.intent.action.PROCESS_TEXT";
+    String EXTRA_PROCESS_TEXT = "android.intent.extra.PROCESS_TEXT";
+
     String detagged(String txt);
-    void setTtsOnUtteranceProgressListener(TextToSpeech tts);
     void disableDatabaseWriteAheadLogging(SQLiteDatabase db);
-    void enableCookiesForFileSchemePages();
     void updateWidgetDimensions(Context context, RemoteViews updateViews, Class<?> cls);
-    void restartActivityInvalidateBackstack(AnkiActivity activity);
     void setFullScreen(AbstractFlashcardViewer activity);
     void setSelectableBackground(View view);
     void openUrl(AnkiActivity activity, Uri uri);
-    void supportAddContentMenu(final DeckPicker a);
-    Intent getPreferenceSubscreenIntent(Context context, String subscreen);
     void prepareWebViewCookies(Context context);
     void flushWebViewCookies();
     void setHTML5MediaAutoPlay(WebSettings settings, Boolean allow);
     void setStatusBarColor(Window window, int color);
+
     /** Returns true if the system UI currently visible during immersive mode */
     boolean isImmersiveSystemUiVisible(AnkiActivity activity);
+    boolean deleteDatabase(File db);
+    Uri getExportUri(Context context, File file);
 }
 

@@ -15,9 +15,10 @@ hi: AnkiDroid फ़्लैशकार्ड
 hu: AnkiDroid szókártyák
 id: Kad imbas AnkiDroid
 ko: AnkiDroid 플래시 카드
+lt: „AnkiDroid“ atminties kortelės
 nl: AnkiDroid flitskaarten
 pl: AnkiDroid – Fiszki
-ru: AnkiDroid флэш-карты
+ru: AnkiDroid: карточки для запоминания
 sk: AnkiDroid kartičky
 sl: Pomnilne kartice AnkiDroid 
 sr: AnkiDroid флеш-картице

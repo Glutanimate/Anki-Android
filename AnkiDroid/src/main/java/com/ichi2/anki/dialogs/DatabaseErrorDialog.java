@@ -33,7 +33,6 @@ public class DatabaseErrorDialog extends AsyncDialogFragment {
     public static final int DIALOG_CONFIRM_DATABASE_CHECK = 6;
     public static final int DIALOG_CONFIRM_RESTORE_BACKUP = 7;
     public static final int DIALOG_FULL_SYNC_FROM_SERVER = 8;
-    public static final int DIALOG_CURSOR_SIZE_LIMIT_EXCEEDED = 9;
 
     // public flag which lets us distinguish between inaccessible and corrupt database
     public static boolean databaseCorruptFlag = false;
@@ -70,7 +69,6 @@ public class DatabaseErrorDialog extends AsyncDialogFragment {
         }
 
         switch (mType) {
-            case DIALOG_CURSOR_SIZE_LIMIT_EXCEEDED:
             case DIALOG_LOAD_FAILED:
                 // Collection failed to load; give user the option of either choosing from repair options, or closing
                 // the activity
@@ -342,11 +340,7 @@ public class DatabaseErrorDialog extends AsyncDialogFragment {
     private String getMessage() {
         switch (getArguments().getInt("dialogType")) {
             case DIALOG_LOAD_FAILED:
-                if (!CompatHelper.isHoneycomb()) {
-                    // Before honeycomb there's no way to know if the db has actually been corrupted
-                    // so we show a non-specific message.
-                    return res().getString(R.string.open_collection_failed_message, res().getString(R.string.repair_deck));
-                } else if (databaseCorruptFlag) {
+                if (databaseCorruptFlag) {
                     // The sqlite database has been corrupted (DatabaseErrorHandler.onCorrupt() was called)
                     // Show a specific message appropriate for the situation
                     return res().getString(R.string.corrupt_db_message, res().getString(R.string.repair_deck));
@@ -369,8 +363,6 @@ public class DatabaseErrorDialog extends AsyncDialogFragment {
                 return res().getString(R.string.restore_backup);
             case DIALOG_FULL_SYNC_FROM_SERVER:
                 return res().getString(R.string.backup_full_sync_from_server_question);
-            case DIALOG_CURSOR_SIZE_LIMIT_EXCEEDED:
-                return res().getString(R.string.cursor_size_limit_exceeded);
             default:
                 return getArguments().getString("dialogMessage");
         }
@@ -396,8 +388,6 @@ public class DatabaseErrorDialog extends AsyncDialogFragment {
                 return res().getString(R.string.restore_backup_title);
             case DIALOG_FULL_SYNC_FROM_SERVER:
                 return res().getString(R.string.backup_full_sync_from_server);
-            case DIALOG_CURSOR_SIZE_LIMIT_EXCEEDED:
-                return res().getString(R.string.open_collection_failed_title);
             default:
                 return res().getString(R.string.answering_error_title);
         }        

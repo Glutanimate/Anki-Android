@@ -37,6 +37,7 @@ import android.text.TextUtils;
 import android.text.TextWatcher;
 
 import android.util.Pair;
+import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
@@ -53,6 +54,7 @@ import android.widget.TextView;
 import com.afollestad.materialdialogs.MaterialDialog;
 import com.ichi2.anim.ActivityTransitionAnimation;
 import com.ichi2.anki.dialogs.NoteEditorRescheduleCard;
+import com.ichi2.anki.dialogs.NoteEditorRepositionCard;
 import com.ichi2.anki.dialogs.ConfirmationDialog;
 import com.ichi2.anki.dialogs.TagsDialog;
 import com.ichi2.anki.dialogs.TagsDialog.TagsDialogListener;
@@ -193,7 +195,6 @@ public class NoteEditor extends AnkiActivity {
             mProgressDialog = StyledProgressDialog
                     .show(NoteEditor.this, "", res.getString(R.string.saving_facts), false);
         }
-
 
         @Override
         public void onProgressUpdate(DeckTask.TaskData... values) {
@@ -536,6 +537,12 @@ public class NoteEditor extends AnkiActivity {
         if (!mAddNote && mCurrentEditedCard != null) {
             Timber.i("NoteEditor:: Edit note activity successfully started with card id %d", mCurrentEditedCard.getId());
         }
+
+        //set focus to FieldEditText 'first' on startup like Anki desktop
+        if (mEditFields != null && !mEditFields.isEmpty()) {
+            FieldEditText first = mEditFields.getFirst();
+            first.requestFocus();
+        }
     }
 
 
@@ -548,6 +555,52 @@ public class NoteEditor extends AnkiActivity {
         }
     }
 
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        switch(keyCode) {
+
+            //some hardware keybds swap between mobile/desktop mode...
+            //when in mobile mode KEYCODE_NUMPAD_ENTER & KEYCODE_ENTER are equiv. but
+            //both need to be captured for desktop keybds
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+            case KeyEvent.KEYCODE_ENTER:
+                if (event.isCtrlPressed()) {
+                    saveNote();
+                }
+                break;
+
+            case KeyEvent.KEYCODE_D:
+                if (event.isCtrlPressed()) {
+                    //null check in case Spinner is moved into options menu in the future
+                    if (mNoteDeckSpinner != null) {
+                        mNoteDeckSpinner.performClick();
+                    }
+                }
+                break;
+
+            case KeyEvent.KEYCODE_L:
+                if (event.isCtrlPressed()) {
+                    showCardTemplateEditor();
+                }
+                break;
+
+            case KeyEvent.KEYCODE_N:
+                if (event.isCtrlPressed()) {
+                    if (mNoteTypeSpinner != null) {
+                        mNoteTypeSpinner.performClick();
+                    }
+                }
+                break;
+
+            case KeyEvent.KEYCODE_T:
+                if (event.isCtrlPressed() && event.isShiftPressed()) {
+                    showTagsDialog();
+                }
+                break;
+        }
+
+        return super.onKeyUp(keyCode, event);
+    }
 
     private void fetchIntentInformation(Intent intent) {
         Bundle extras = intent.getExtras();
@@ -683,14 +736,16 @@ public class NoteEditor extends AnkiActivity {
                 mReloadRequired = true;
                 if (mModelChangeCardMap.size() < mEditorNote.cards().size() || mModelChangeCardMap.containsKey(null)) {
                     // If cards will be lost via the new mapping then show a confirmation dialog before proceeding with the change
-                    ConfirmationDialog dialog = new ConfirmationDialog () {
+                    ConfirmationDialog dialog = new ConfirmationDialog ();
+                    dialog.setArgs(res.getString(R.string.confirm_map_cards_to_nothing));
+                    Runnable confirm = new Runnable() {
                         @Override
-                        public void confirm() {
+                        public void run() {
                             // Bypass the check once the user confirms
                             changeNoteTypeWithErrorHandling(oldModel, newModel);
                         }
                     };
-                    dialog.setArgs(res.getString(R.string.confirm_map_cards_to_nothing));
+                    dialog.setConfirm(confirm);
                     showDialogFragment(dialog);
                 } else {
                     // Otherwise go straight to changing note type
@@ -744,9 +799,11 @@ public class NoteEditor extends AnkiActivity {
             changeNoteType(oldModel, newModel);
         } catch (ConfirmModSchemaException e) {
             // Libanki has determined we should ask the user to confirm first
-            ConfirmationDialog dialog = new ConfirmationDialog() {
+            ConfirmationDialog dialog = new ConfirmationDialog();
+            dialog.setArgs(res.getString(R.string.full_sync_confirmation));
+            Runnable confirm = new Runnable() {
                 @Override
-                public void confirm() {
+                public void run() {
                     // Bypass the check once the user confirms
                     getCol().modSchemaNoCheck();
                     try {
@@ -757,7 +814,7 @@ public class NoteEditor extends AnkiActivity {
                     }
                 }
             };
-            dialog.setArgs(res.getString(R.string.full_sync_confirmation));
+            dialog.setConfirm(confirm);
             showDialogFragment(dialog);
         }
     }
@@ -802,7 +859,9 @@ public class NoteEditor extends AnkiActivity {
             menu.findItem(R.id.action_add_card_from_card_editor).setVisible(true);
             menu.findItem(R.id.action_reset_card_progress).setVisible(true);
             menu.findItem(R.id.action_reschedule_card).setVisible(true);
-            menu.findItem(R.id.action_reset_card_progress).setVisible(true);
+            if (mCurrentEditedCard.getType() == Card.TYPE_NEW) {
+                menu.findItem(R.id.action_reposition_card).setVisible(true);
+            }
         }
         if (mEditFields != null) {
             for (int i = 0; i < mEditFields.size(); i++) {
@@ -844,29 +903,35 @@ public class NoteEditor extends AnkiActivity {
                 startActivityForResultWithAnimation(intent, REQUEST_ADD, ActivityTransitionAnimation.LEFT);
                 return true;
 
-            case R.id.action_reset_card_progress:
+            case R.id.action_reset_card_progress: {
                 Timber.i("NoteEditor:: Reset progress button pressed");
                 // Show confirmation dialog before resetting card progress
-                ConfirmationDialog dialog = new ConfirmationDialog () {
+                ConfirmationDialog dialog = new ConfirmationDialog();
+                String title = res.getString(R.string.reset_card_dialog_title);
+                String message = res.getString(R.string.reset_card_dialog_message);
+                dialog.setArgs(title, message);
+                Runnable confirm = new Runnable() {
                     @Override
-                    public void confirm() {
+                    public void run() {
                         Timber.i("NoteEditor:: OK button pressed");
-                        getCol().getSched().forgetCards(new long[] { mCurrentEditedCard.getId() });
+                        getCol().getSched().forgetCards(new long[]{mCurrentEditedCard.getId()});
                         getCol().reset();
                         mReloadRequired = true;
                         UIUtils.showThemedToast(NoteEditor.this,
                                 getResources().getString(R.string.reset_card_dialog_acknowledge), true);
                     }
                 };
-                String title = res.getString(R.string.reset_card_dialog_title);
-                String message = res.getString(R.string.reset_card_dialog_message);
-                dialog.setArgs(title, message);
+                dialog.setConfirm(confirm);
                 showDialogFragment(dialog);
                 return true;
-
+            }
             case R.id.action_reschedule_card:
                 Timber.i("NoteEditor:: Reschedule button pressed");
                 showDialogFragment(NoteEditorRescheduleCard.newInstance());
+                return true;
+            case R.id.action_reposition_card:
+                Timber.i("NoteEditor:: Reposition button pressed");
+                showDialogFragment(NoteEditorRepositionCard.newInstance());
                 return true;
 
             default:
@@ -975,6 +1040,14 @@ public class NoteEditor extends AnkiActivity {
                 getResources().getString(R.string.reschedule_card_dialog_acknowledge), true);
     }
 
+    public void onRepositionCard(int position) {
+        Timber.i("Reposition card");
+        getCol().getSched().sortCards(new long[] { mCurrentEditedCard.getId() }, position, 1, false, true);
+        getCol().reset();
+        mReloadRequired = true;
+        UIUtils.showThemedToast(NoteEditor.this,
+                getResources().getString(R.string.reposition_card_dialog_acknowledge), true);
+    }
 
     private void showTagsDialog() {
         if (mSelectedTags == null) {
@@ -1171,6 +1244,13 @@ public class NoteEditor extends AnkiActivity {
                                     mNote.setField(index, field);
                                     startMultimediaFieldEditor(index, mNote, field);
                                     return true;
+                                case R.id.menu_multimedia_cloze:
+                                    FieldEditText fieldEditText = mEditFields.get(index);
+                                    String text = fieldEditText.getText().toString();
+                                    int selectionStart = fieldEditText.getSelectionStart();
+                                    int selectionEnd = fieldEditText.getSelectionEnd();
+                                    fieldEditText.setText(insertClozeAround(text, selectionStart, selectionEnd));
+                                    return true;
                                 default:
                                     return false;
                             }
@@ -1180,6 +1260,12 @@ public class NoteEditor extends AnkiActivity {
                 }
             }
         });
+    }
+
+    private String insertClozeAround(String text, int selectionStart, int selectionEnd) {
+        int selectionMin = Math.min(selectionStart, selectionEnd);
+        int selectionMax = Math.max(selectionStart, selectionEnd);
+        return text.substring(0, selectionMin) + "{{c1::" + text.substring(selectionMin, selectionMax) + "}}" + text.substring(selectionMax);
     }
 
 
