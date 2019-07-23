@@ -25,8 +25,9 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PathMeasure;
+import android.graphics.Point;
 import android.graphics.PointF;
-import android.support.v4.content.ContextCompat;
+import androidx.core.content.ContextCompat;
 import android.view.Display;
 import android.view.MotionEvent;
 import android.view.View;
@@ -61,8 +62,8 @@ public class Whiteboard extends View {
 
     private boolean mSecondFingerWithinTapTolerance;
     private boolean mCurrentlyDrawing = false;
-    private boolean mInvertedColors = false;
-    private boolean mMonochrome = true;
+    private boolean mInvertedColors;
+    private boolean mMonochrome;
     private boolean mUndoModeActive = false;
 
 
@@ -233,7 +234,8 @@ public class Whiteboard extends View {
 
     private void createBitmap() {
         // To fix issue #1336, just make the whiteboard big and square.
-        int bitmapSize = Math.max(getDisplayWidth(), getDisplayHeight());
+        final Point p = getDisplayDimenions();
+        int bitmapSize = Math.max(p.x, p.y);
         if (mMonochrome && !mInvertedColors) {
             createBitmap(bitmapSize, bitmapSize, Bitmap.Config.ALPHA_8);
         } else {
@@ -341,18 +343,12 @@ public class Whiteboard extends View {
         return false;
     }
 
-
-    private static int getDisplayHeight() {
+    private static Point getDisplayDimenions() {
         Display display = ((WindowManager) AnkiDroidApp.getInstance().getApplicationContext().
                 getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();
-        return display.getHeight();
-    }
-
-
-    private static int getDisplayWidth() {
-        Display display = ((WindowManager) AnkiDroidApp.getInstance().getApplicationContext().
-                getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();
-        return display.getWidth();
+        Point point = new Point();
+        display.getSize(point);
+        return point;
     }
 
     /**

@@ -13,6 +13,10 @@
 # It will ask you for your keystore and key password
 
 TAG=$1
+if [ "$TAG" == "" ]; then
+    echo "Please enter a tag (likely a version number) for the APK file names"
+    exit 1
+fi
 
 # Read the key passwords
 read -sp "Enter keystore password: " KSTOREPWD; echo
@@ -23,12 +27,12 @@ export KEYPWD
 # Get on to the tag requested
 #git checkout $TAG
 
-BUILDNAMES='A B C'
+BUILDNAMES='A B C D E'
 for BUILD in $BUILDNAMES; do
     git reset --hard
     git clean -f
     LCBUILD=`tr '[:upper:]' '[:lower:]' <<< $BUILD`
-    ./tools/parallel-package-name.sh com.ici2.anki.$LCBUILD AnkiDroid.$BUILD
+    ./tools/parallel-package-name.sh com.ichi2.anki.$LCBUILD AnkiDroid.$BUILD
     ./gradlew assembleRelease
-    cp AnkiDroid/build/outputs/apk/AnkiDroid-release.apk ../AnkiDroid-$TAG.parallel.$BUILD.apk
+    cp AnkiDroid/build/outputs/apk/release/AnkiDroid-release.apk ../AnkiDroid-$TAG.parallel.$BUILD.apk
 done

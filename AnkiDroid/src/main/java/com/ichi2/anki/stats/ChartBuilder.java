@@ -42,7 +42,7 @@ public class ChartBuilder {
     private static final double Y_AXIS_STRETCH_FACTOR = 1.05;
 
     private final Stats.ChartType mChartType;
-    private boolean mIsWholeCollection = false;
+    private long mDeckId;
     private ChartView mChartView;
     private Collection mCollectionData;
 
@@ -59,15 +59,15 @@ public class ChartBuilder {
     private double mMcount;
     private boolean mDynamicAxis;
 
-    public ChartBuilder(ChartView chartView, Collection collectionData, boolean isWholeCollection, Stats.ChartType chartType){
+    public ChartBuilder(ChartView chartView, Collection collectionData, long deckId, Stats.ChartType chartType){
         mChartView = chartView;
         mCollectionData = collectionData;
-        mIsWholeCollection = isWholeCollection;
+        mDeckId = deckId;
         mChartType = chartType;
     }
 
     private void calcStats(Stats.AxisType type){
-        Stats stats = new Stats(mCollectionData, mIsWholeCollection);
+        Stats stats = new Stats(mCollectionData, mDeckId);
         switch (mChartType){
             case FORECAST:
                 stats.calculateDue(mChartView.getContext(), type);
@@ -265,7 +265,7 @@ public class ChartBuilder {
 
             Lines lines = new Lines(hiddenPlotSheet, cumulative, usedColor);
             lines.setSize(3f);
-            lines.setShadow(5f, 2f, 2f, ColorWrap.BLACK);
+            lines.setShadow(2f, 2f, ColorWrap.BLACK);
             if (!mHasColoredCumulative) {
                 lines.setName(name);
             }
@@ -289,8 +289,13 @@ public class ChartBuilder {
         //some explicit x-axis naming:
         switch (mChartType) {
             case ANSWER_BUTTONS:
-                timePositions = new double[]{1, 2, 3, 6, 7, 8, 9, 11, 12, 13, 14};
-                xAxis.setExplicitTicks(timePositions, mChartView.getResources().getStringArray(R.array.stats_eases_ticks));
+                if (mCollectionData.schedVer() == 1) {
+                    timePositions = new double[]{1, 2, 3, 6, 7, 8, 9, 11, 12, 13, 14};
+                    xAxis.setExplicitTicks(timePositions, mChartView.getResources().getStringArray(R.array.stats_eases_ticks));
+                } else {
+                    timePositions = new double[]{1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14};
+                    xAxis.setExplicitTicks(timePositions, mChartView.getResources().getStringArray(R.array.stats_eases_ticks_schedv2));
+                }
                 break;
             case HOURLY_BREAKDOWN:
                 timePositions = new double[]{0, 6, 12, 18, 23};
@@ -346,7 +351,11 @@ public class ChartBuilder {
         //some explicit x-axis naming:
         switch (mChartType) {
             case ANSWER_BUTTONS:
-                timePositions = new double[]{1, 2, 3, 6, 7, 8, 9, 11, 12, 13, 14};
+                if (mCollectionData.schedVer() == 1) {
+                    timePositions = new double[]{1, 2, 3, 6, 7, 8, 9, 11, 12, 13, 14};
+                } else {
+                    timePositions = new double[]{1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14};
+                }
                 yGrid.setExplicitTicks(timePositions);
                 break;
             case HOURLY_BREAKDOWN:

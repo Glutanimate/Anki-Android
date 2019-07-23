@@ -40,6 +40,9 @@ import java.util.Vector;
 import timber.log.Timber;
 
 
+@SuppressWarnings({"PMD.ExcessiveClassLength","PMD.AvoidThrowingRawExceptionTypes","PMD.AvoidReassigningParameters",
+        "PMD.NPathComplexity","PMD.MethodNamingConventions","PMD.ExcessiveMethodLength","PMD.OneDeclarationPerLine",
+        "PMD.SwitchStmtsShouldHaveDefault","PMD.EmptyIfStmt"})
 public class Stats {
 
     public enum AxisType {
@@ -58,10 +61,9 @@ public class Stats {
     public enum ChartType {FORECAST, REVIEW_COUNT, REVIEW_TIME,
         INTERVALS, HOURLY_BREAKDOWN, WEEKLY_BREAKDOWN, ANSWER_BUTTONS, CARDS_TYPES, OTHER}
 
-    private static Stats sCurrentInstance;
-
     private Collection mCol;
     private boolean mWholeCollection;
+    private long mDeckId;
     private boolean mDynamicAxis = false;
     private double[][] mSeriesList;
 
@@ -86,13 +88,13 @@ public class Stats {
     private double mPeak;
     private double mMcount;
 
+    public static final double SECONDS_PER_DAY = 86400.0;
+    public static final long ALL_DECKS_ID = 0L;
 
-    public static double SECONDS_PER_DAY = 86400.0;
-
-    public Stats(Collection col, boolean wholeCollection) {
+    public Stats(Collection col, long did) {
         mCol = col;
-        mWholeCollection = wholeCollection;
-        sCurrentInstance = this;
+        mWholeCollection = (did == ALL_DECKS_ID);
+        mDeckId = did;
     }
 
     public double[][] getSeriesList() {
@@ -109,7 +111,7 @@ public class Stats {
             title = AnkiDroidApp.getInstance().getResources().getString(R.string.card_browser_all_decks);
         } else {
             try {
-                title = mCol.getDecks().current().getString("name");
+                title = mCol.getDecks().get(mDeckId).getString("name");
             } catch (JSONException e) {
                 throw new RuntimeException(e);
             }
@@ -144,7 +146,7 @@ public class Stats {
         try {
             cur = mCol.getDb()
                     .getDatabase()
-                    .rawQuery(query, null);
+                    .query(query, null);
 
             cur.moveToFirst();
             cards = cur.getInt(0);
@@ -170,7 +172,7 @@ public class Stats {
         try {
             cur = mCol.getDb()
                     .getDatabase()
-                    .rawQuery(query, null);
+                    .query(query, null);
 
             cur.moveToFirst();
             mcnt = cur.getInt(0);
@@ -217,7 +219,7 @@ public class Stats {
         Cursor cur = null;
         int res = 0;
         try {
-            cur = mCol.getDb().getDatabase().rawQuery(query, null);
+            cur = mCol.getDb().getDatabase().query(query, null);
             while (cur.moveToNext()) {
                 res = cur.getInt(0);
             }
@@ -230,7 +232,7 @@ public class Stats {
         return res;
     }
 
-    String getRevlogFilter(AxisType timespan,boolean inverseTimeSpan){
+    private String getRevlogFilter(AxisType timespan,boolean inverseTimeSpan){
         ArrayList<String> lims = new ArrayList<>();
         String dayFilter = getRevlogTimeFilter(timespan, inverseTimeSpan);
         if (!TextUtils.isEmpty(dayFilter)) {
@@ -254,7 +256,7 @@ public class Stats {
         String lim = getRevlogFilter(timespan,false);
         Cursor cur = null;
         try {
-            cur = mCol.getDb().getDatabase().rawQuery(
+            cur = mCol.getDb().getDatabase().query(
                     "SELECT COUNT(*) as num_reviews, sum(case when type = 0 then 1 else 0 end) as new_cards FROM revlog " + lim, null);
             while (cur.moveToNext()) {
                 oStats.totalReviews = cur.getInt(0);
@@ -270,7 +272,7 @@ public class Stats {
                 + " FROM revlog " + lim + " GROUP BY day ORDER BY day)";
         Timber.d("Count cntquery: %s", cntquery);
         try {
-            cur = mCol.getDb().getDatabase().rawQuery(cntquery, null);
+            cur = mCol.getDb().getDatabase().query(cntquery, null);
             while (cur.moveToNext()) {
                 oStats.daysStudied = cur.getInt(0);
                 oStats.totalTime = cur.getDouble(2);
@@ -285,7 +287,7 @@ public class Stats {
         }
 
         try {
-            cur = mCol.getDb().getDatabase().rawQuery(
+            cur = mCol.getDb().getDatabase().query(
                     "select avg(ivl), max(ivl) from cards where did in " +_limit() + " and queue = 2", null);
             cur.moveToFirst();
             oStats.averageInterval = cur.getDouble(0);
@@ -382,7 +384,7 @@ public class Stats {
             cur = mCol
                     .getDb()
                     .getDatabase()
-                    .rawQuery(query, null);
+                    .query(query, null);
             while (cur.moveToNext()) {
                 dues.add(new int[] { cur.getInt(0), cur.getInt(1), cur.getInt(2) });
             }
@@ -551,7 +553,7 @@ public class Stats {
             cur = mCol
                     .getDb()
                     .getDatabase()
-                    .rawQuery(
+                    .query(
                             query, null);
             while (cur.moveToNext()) {
                 list.add(new double[] { cur.getDouble(0), cur.getDouble(5), cur.getDouble(1), cur.getDouble(4),
@@ -697,7 +699,7 @@ public class Stats {
             cur = mCol
                     .getDb()
                     .getDatabase()
-                    .rawQuery(
+                    .query(
                             "select ivl / " + chunk + " as grp, count() from cards " +
                                     "where did in "+ _limit() +" and queue = 2 " + lim + " " +
                                     "group by grp " +
@@ -709,7 +711,7 @@ public class Stats {
             cur = mCol
                     .getDb()
                     .getDatabase()
-                    .rawQuery(
+                    .query(
                             "select count(), avg(ivl), max(ivl) from cards where did in " +_limit() +
                                     " and queue = 2", null);
             cur.moveToFirst();
@@ -799,16 +801,20 @@ public class Stats {
         if (lim.length() > 0) {
             lim = " and " + lim;
         }
-
-        Calendar sd = GregorianCalendar.getInstance();
-        sd.setTimeInMillis(mCol.getCrt() * 1000);
-
+        int rolloverHour;
+        if (mCol.schedVer() == 1) {
+            Calendar sd = GregorianCalendar.getInstance();
+            sd.setTimeInMillis(mCol.getCrt() * 1000);
+            rolloverHour = sd.get(Calendar.HOUR_OF_DAY);
+        } else {
+            rolloverHour = mCol.getConf().optInt("rollover", 4);
+        }
         int pd = _periodDays();
         if (pd > 0) {
             lim += " and id > " + ((mCol.getSched().getDayCutoff() - (SECONDS_PER_DAY * pd)) * 1000);
         }
         long cutoff = mCol.getSched().getDayCutoff();
-        long cut = cutoff - sd.get(Calendar.HOUR_OF_DAY) * 3600;
+        long cut = cutoff - rolloverHour * 3600;
 
         ArrayList<double[]> list = new ArrayList<>();
         Cursor cur = null;
@@ -819,11 +825,11 @@ public class Stats {
                 "count() " +
                 "from revlog where type in (0,1,2) " + lim +" " +
                 "group by hour having count() > 30 order by hour";
-        Timber.d(sd.get(Calendar.HOUR_OF_DAY) + " : " +cutoff + " breakdown query: %s", query);
+        Timber.d(rolloverHour + " : " +cutoff + " breakdown query: %s", query);
         try {
             cur = mCol.getDb()
                     .getDatabase()
-                    .rawQuery(query, null);
+                    .query(query, null);
             while (cur.moveToNext()) {
                 list.add(new double[] { cur.getDouble(0), cur.getDouble(1), cur.getDouble(2) });
             }
@@ -960,7 +966,7 @@ public class Stats {
         try {
             cur = mCol.getDb()
                     .getDatabase()
-                    .rawQuery(query, null);
+                    .query(query, null);
             while (cur.moveToNext()) {
                 list.add(new double[] { cur.getDouble(0), cur.getDouble(1), cur.getDouble(2) });
             }
@@ -1079,13 +1085,19 @@ public class Stats {
             lim = "";
         }
 
+        String ease4repl;
+        if (mCol.schedVer() == 1) {
+            ease4repl = "3";
+        } else {
+            ease4repl = "ease";
+        }
         ArrayList<double[]> list = new ArrayList<>();
         Cursor cur = null;
         String query = "select (case " +
                 "                when type in (0,2) then 0 " +
                 "        when lastIvl < 21 then 1 " +
                 "        else 2 end) as thetype, " +
-                "        (case when type in (0,2) and ease = 4 then 3 else ease end), count() from revlog " + lim + " " +
+                "        (case when type in (0,2) and ease = 4 then " + ease4repl +" else ease end), count() from revlog " + lim + " " +
                 "        group by thetype, ease " +
                 "        order by thetype, ease";
         Timber.d("AnswerButtons query: %s", query);
@@ -1093,7 +1105,7 @@ public class Stats {
         try {
             cur = mCol.getDb()
                     .getDatabase()
-                    .rawQuery(query, null);
+                    .query(query, null);
             while (cur.moveToNext()) {
                 list.add(new double[]{cur.getDouble(0), cur.getDouble(1), cur.getDouble(2)});
             }
@@ -1164,7 +1176,7 @@ public class Stats {
         try {
             cur = mCol.getDb()
                     .getDatabase()
-                    .rawQuery(query, null);
+                    .query(query, null);
 
             cur.moveToFirst();
             pieData = new double[]{ cur.getDouble(0), cur.getDouble(1), cur.getDouble(2), cur.getDouble(3) };
@@ -1205,9 +1217,22 @@ public class Stats {
      */
 
     private String _limit() {
-        if (mWholeCollection) {
+        return deckLimit(mDeckId, mCol);
+    }
+
+
+    /**
+     * Note: NOT in libanki
+     * Return a string of deck ids for the provided deck and its children, suitable for an SQL query
+     * @param deckId the deck id to filter on, or ALL_DECKS_ID for all decks
+     * @param col collection
+     * @return
+     */
+    public static String deckLimit(Long deckId, Collection col) {
+        if (deckId == ALL_DECKS_ID) {
+            // All decks
             ArrayList<Long> ids = new ArrayList<>();
-            for (JSONObject d : mCol.getDecks().all()) {
+            for (JSONObject d : col.getDecks().all()) {
                 try {
                     ids.add(d.getLong("id"));
                 } catch (JSONException e) {
@@ -1216,16 +1241,19 @@ public class Stats {
             }
             return Utils.ids2str(Utils.arrayList2array(ids));
         } else {
-            return mCol.getSched()._deckLimit();
+            // The given deck id and its children
+            ArrayList<Long> ids = new ArrayList<>();
+            ids.add(deckId);
+            ids.addAll(col.getDecks().children(deckId).values());
+            return Utils.ids2str(ids);
         }
     }
-
 
     private String _getDeckFilter() {
         if (mWholeCollection) {
             return "";
         } else {
-            return "cid IN (SELECT id FROM cards WHERE did IN " + Utils.ids2str(mCol.getDecks().active()) + ")";
+            return "cid IN (SELECT id FROM cards WHERE did IN " + _limit() + ")";
         }
     }
 
