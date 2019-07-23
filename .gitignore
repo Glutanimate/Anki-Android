@@ -50,3 +50,7 @@ Thumbs.db
 # Crowdin files
 ankidroid.zip
 tools/crowdin_key.txt
+
+# Testing / quality remnants
+AnkiDroid/ACRA-INSTALLATION
+.codacy.json

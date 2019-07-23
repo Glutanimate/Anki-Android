@@ -17,10 +17,10 @@ package com.ichi2.compat.customtabs;
 import android.app.Activity;
 import android.net.Uri;
 import android.os.Bundle;
-import android.support.customtabs.CustomTabsClient;
-import android.support.customtabs.CustomTabsIntent;
-import android.support.customtabs.CustomTabsServiceConnection;
-import android.support.customtabs.CustomTabsSession;
+import androidx.browser.customtabs.CustomTabsClient;
+import androidx.browser.customtabs.CustomTabsIntent;
+import androidx.browser.customtabs.CustomTabsServiceConnection;
+import androidx.browser.customtabs.CustomTabsSession;
 
 import java.util.List;
 
@@ -120,7 +120,13 @@ public class CustomTabActivityHelper implements ServiceConnectionCallback {
     @Override
     public void onServiceConnected(CustomTabsClient client) {
         mClient = client;
-        mClient.warmup(0L);
+        try {
+            mClient.warmup(0L);
+        } catch (IllegalStateException e) {
+            // Issue 5337 - some browsers like TorBrowser don't adhere to Android 8 background limits
+            // They will crash as they attempt to start services. warmup failure shouldn't be fatal though.
+            Timber.w(e, "Ignoring CustomTabs implementation that doesn't conform to Android 8 background limits");
+        }
         getSession();
     }
 

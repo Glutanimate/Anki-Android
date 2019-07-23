@@ -52,6 +52,9 @@ import java.util.Random;
 
 import timber.log.Timber;
 
+@SuppressWarnings({"PMD.ExcessiveClassLength", "PMD.AvoidThrowingRawExceptionTypes","PMD.AvoidReassigningParameters",
+                    "PMD.NPathComplexity","PMD.MethodNamingConventions","PMD.AvoidBranchingStatementAsLastInLoop",
+                    "PMD.SwitchStmtsShouldHaveDefault","PMD.CollapsibleIfStatements","PMD.EmptyIfStmt"})
 public class Sched {
 
 
@@ -93,6 +96,14 @@ public class Sched {
     // Not in libanki
     private WeakReference<Activity> mContextReference;
 
+
+    /**
+     * This is a do-nothing constructor for descendants (ScedV2) to use.
+     */
+    public Sched() {
+
+    }
+
     /**
      * queue types: 0=new/cram, 1=lrn, 2=rev, 3=day lrn, -1=suspended, -2=buried
      * revlog types: 0=lrn, 1=rev, 2=relrn, 3=cram
@@ -102,7 +113,7 @@ public class Sched {
     public Sched(Collection col) {
         mCol = col;
         mQueueLimit = 50;
-        mReportLimit = 1000;
+        mReportLimit = 99999;
         mReps = 0;
         mHaveQueues = false;
         _updateCutoff();
@@ -391,6 +402,7 @@ public class Sched {
                 // if we've already seen the exact same deck name, remove the
                 // invalid duplicate and reload
                 if (lims.containsKey(deck.getString("name"))) {
+                    Timber.i("deckDueList() removing duplicate deck %s", deck.getString("name"));
                     mCol.getDecks().rem(deck.getLong("id"), false, true);
                     return deckDueList();
                 }
@@ -607,7 +619,7 @@ public class Sched {
                     cur = mCol
                             .getDb()
                             .getDatabase()
-                            .rawQuery("SELECT id FROM cards WHERE did = " + did + " AND queue = 0 order by due LIMIT " + lim,
+                            .query("SELECT id FROM cards WHERE did = " + did + " AND queue = 0 order by due LIMIT " + lim,
                                     null);
                     while (cur.moveToNext()) {
                         mNewQueue.add(cur.getLong(0));
@@ -787,7 +799,7 @@ public class Sched {
             cur = mCol
                     .getDb()
                     .getDatabase()
-                    .rawQuery(
+                    .query(
                             "SELECT due, id FROM cards WHERE did IN " + _deckLimit() + " AND queue = 1 AND due < "
                                     + mDayCutoff + " LIMIT " + mReportLimit, null);
             while (cur.moveToNext()) {
@@ -852,7 +864,7 @@ public class Sched {
                 cur = mCol
                         .getDb()
                         .getDatabase()
-                        .rawQuery(
+                        .query(
                                 "SELECT id FROM cards WHERE did = " + did + " AND queue = 3 AND due <= " + mToday
                                         + " LIMIT " + mQueueLimit, null);
                 while (cur.moveToNext()) {
@@ -1267,7 +1279,7 @@ public class Sched {
                     cur = mCol
                             .getDb()
                             .getDatabase()
-                            .rawQuery(
+                            .query(
                                     "SELECT id FROM cards WHERE did = " + did + " AND queue = 2 AND due <= " + mToday
                                             + " LIMIT " + lim, null);
                     while (cur.moveToNext()) {
@@ -1511,7 +1523,7 @@ public class Sched {
         card.setIvl(_adjRevIvl(card, idealIvl));
     }
 
-
+    @SuppressWarnings("PMD.UnusedFormalParameter") // it's unused upstream as well
     private int _adjRevIvl(Card card, int idealIvl) {
         if (mSpreadRev) {
             idealIvl = _fuzzedIvl(idealIvl);
@@ -1649,6 +1661,7 @@ public class Sched {
             default:
             	// if we don't understand the term, default to due order
             	t = "c.due";
+            	break;
         }
         return t + " limit " + l;
     }
@@ -1656,7 +1669,7 @@ public class Sched {
 
     private void _moveToDyn(long did, List<Long> ids) {
         ArrayList<Object[]> data = new ArrayList<>();
-        long t = Utils.intNow();
+        //long t = Utils.intNow(); // unused variable present (and unused) upstream
         int u = mCol.usn();
         for (long c = 0; c < ids.size(); c++) {
             // start at -100000 so that reviews are all due
@@ -2121,7 +2134,7 @@ public class Sched {
         // loop through and remove from queues
         Cursor cur = null;
         try {
-            cur = mCol.getDb().getDatabase().rawQuery(String.format(Locale.US,
+            cur = mCol.getDb().getDatabase().query(String.format(Locale.US,
                     "select id, queue from cards where nid=%d and id!=%d "+
                     "and (queue=0 or (queue=2 and due<=%d))", card.getNid(), card.getId(), mToday), null);
             while (cur.moveToNext()) {
@@ -2256,7 +2269,7 @@ public class Sched {
         Cursor cur = null;
         try {
             cur = mCol.getDb().getDatabase()
-                    .rawQuery("SELECT id, nid FROM cards WHERE type = 0 AND id IN " + scids, null);
+                    .query("SELECT id, nid FROM cards WHERE type = 0 AND id IN " + scids, null);
             while (cur.moveToNext()) {
                 long nid = cur.getLong(1);
                 d.add(new Object[] { due.get(nid), now, mCol.usn(), cur.getLong(0) });
@@ -2396,7 +2409,7 @@ public class Sched {
                 cur = mCol
                         .getDb()
                         .getDatabase()
-                        .rawQuery(
+                        .query(
                                 "SELECT avg(CASE WHEN ease > 1 THEN 1.0 ELSE 0.0 END), avg(time) FROM revlog WHERE type = 1 AND id > "
                                         + ((mCol.getSched().getDayCutoff() - (7 * 86400)) * 1000), null);
                 if (!cur.moveToFirst()) {
@@ -2412,7 +2425,7 @@ public class Sched {
                 cur = mCol
                         .getDb()
                         .getDatabase()
-                        .rawQuery(
+                        .query(
                                 "SELECT avg(CASE WHEN ease = 3 THEN 1.0 ELSE 0.0 END), avg(time) FROM revlog WHERE type != 1 AND id > "
                                         + ((mCol.getSched().getDayCutoff() - (7 * 86400)) * 1000), null);
                 if (!cur.moveToFirst()) {

@@ -69,7 +69,7 @@ function taBlur(itag) {
     window.location.href = "typeblurtext:" + itag.value;
 }
 
-/* Look at the text enterend into the input box and send the text on a return */
+/* Look at the text entered into the input box and send the text on a return */
 function taKey(itag, e) {
     var keycode;
     if (window.event) {
@@ -106,5 +106,12 @@ var onPageFinished = function() {
         resizeImages();
         /* Re-anchor to answer after image resize since the point changes */
         window.location.href = "#answer";
+    }
+    if (window.MathJax != null) {
+        var card = document.querySelector('.card');
+        MathJax.Hub.Queue(['Typeset', MathJax.Hub, card]);
+        MathJax.Hub.Queue(function () {
+            card.classList.remove("mathjax-hasnt-rendered-yet");
+        });
     }
 }

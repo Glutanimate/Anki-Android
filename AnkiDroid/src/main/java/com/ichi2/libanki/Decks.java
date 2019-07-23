@@ -4,6 +4,7 @@
  * Copyright (c) 2009 Edu Zamora <edu.zasu@gmail.com>                                   *
  * Copyright (c) 2010 Norbert Nagold <norbert.nagold@gmail.com>                         *
  * Copyright (c) 2015 Houssam Salem <houssam.salem.au@gmail.com>                        *
+ * Copyright (c) 2018 Chris Williams <chris@chrispwill.com>                             *
  *                                                                                      *
  * This program is free software; you can redistribute it and/or modify it under        *
  * the terms of the GNU General Public License as published by the Free Software        *
@@ -42,9 +43,13 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
 
+import androidx.annotation.NonNull;
+
 // fixmes:
 // - make sure users can't set grad interval < 1
 
+@SuppressWarnings({"PMD.AvoidThrowingRawExceptionTypes",
+        "PMD.MethodNamingConventions","PMD.AvoidReassigningParameters","PMD.SimplifyBooleanReturns"})
 public class Decks {
 
 
@@ -437,7 +442,7 @@ public class Decks {
     }
 
 
-    public JSONObject get(long did) {
+    public @NonNull JSONObject get(long did) {
         return get(did, true);
     }
 
@@ -937,6 +942,58 @@ public class Decks {
     }
 
 
+
+    private void gather(HashMap<Long, HashMap> node, List<Long> arr) {
+        for (Long did : node.keySet()) {
+            HashMap child = node.get(did);
+            arr.add(did);
+            gather(child, arr);
+        }
+    }
+
+    public List<Long> childDids(Long did, HashMap<Long, HashMap> childMap) {
+        List<Long> arr = new ArrayList<>();
+        gather(childMap.get(did), arr);
+        return arr;
+    }
+
+
+    public HashMap<Long, HashMap> childMap() {
+        HashMap<String, JSONObject> nameMap = nameMap();
+
+        HashMap<Long, HashMap> childMap = new HashMap<>();
+
+        // Go through all decks, sorted by name
+        ArrayList<JSONObject> decks = all();
+
+        Collections.sort(decks, (o1, o2) -> {
+            try {
+                return o1.getString("name").compareTo(o2.getString("name"));
+            } catch (JSONException e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        try {
+            for (JSONObject deck : decks) {
+                HashMap node = new HashMap();
+                childMap.put(deck.getLong("id"), node);
+
+                List<String> parts = Arrays.asList(deck.getString("name").split("::", -1));
+                if (parts.size() > 1) {
+                    String immediateParent = TextUtils.join("::", parts.subList(0, parts.size() - 1));
+                    long pid = nameMap.get(immediateParent).getLong("id");
+                    childMap.get(pid).put(deck.getLong("id"), node);
+                }
+            }
+        } catch (JSONException e) {
+            throw new RuntimeException(e);
+        }
+
+        return childMap;
+    }
+
+
     /**
      * All parents of did.
      */
@@ -961,6 +1018,21 @@ public class Decks {
         } catch (JSONException e) {
             throw new RuntimeException(e);
         }
+    }
+
+
+    private HashMap<String, JSONObject> nameMap() {
+        HashMap<String, JSONObject> map = new HashMap<>();
+
+        try {
+            for (JSONObject object : mDecks.values()) {
+                map.put(object.getString("name"), object);
+            }
+        } catch (JSONException e) {
+            throw new RuntimeException(e);
+        }
+
+        return map;
     }
 
 

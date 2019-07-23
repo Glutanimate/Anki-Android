@@ -18,25 +18,24 @@
 
 package com.ichi2.anki;
 
+import android.annotation.TargetApi;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
-import android.graphics.PorterDuff;
 import android.graphics.Typeface;
+import android.os.Build;
 import android.os.Bundle;
-import android.support.v4.content.ContextCompat;
-import android.support.v7.widget.PopupMenu;
-import android.support.v7.widget.PopupMenu.OnMenuItemClickListener;
-import android.support.v7.widget.Toolbar;
+import androidx.appcompat.widget.PopupMenu;
+import androidx.appcompat.widget.Toolbar;
 import android.text.Editable;
-import android.text.Html;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 
 import android.util.Pair;
+import android.view.ActionMode;
 import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -53,15 +52,14 @@ import android.widget.TextView;
 
 import com.afollestad.materialdialogs.MaterialDialog;
 import com.ichi2.anim.ActivityTransitionAnimation;
-import com.ichi2.anki.dialogs.NoteEditorRescheduleCard;
-import com.ichi2.anki.dialogs.NoteEditorRepositionCard;
 import com.ichi2.anki.dialogs.ConfirmationDialog;
 import com.ichi2.anki.dialogs.TagsDialog;
 import com.ichi2.anki.dialogs.TagsDialog.TagsDialogListener;
 import com.ichi2.anki.exception.ConfirmModSchemaException;
 import com.ichi2.anki.multimediacard.IMultimediaEditableNote;
 import com.ichi2.anki.multimediacard.activity.MultimediaEditFieldActivity;
-import com.ichi2.anki.multimediacard.fields.AudioField;
+import com.ichi2.anki.multimediacard.fields.AudioClipField;
+import com.ichi2.anki.multimediacard.fields.AudioRecordingField;
 import com.ichi2.anki.multimediacard.fields.EFieldType;
 import com.ichi2.anki.multimediacard.fields.IField;
 import com.ichi2.anki.multimediacard.fields.ImageField;
@@ -70,6 +68,7 @@ import com.ichi2.anki.multimediacard.impl.MultimediaEditableNote;
 import com.ichi2.anki.receiver.SdCardReceiver;
 import com.ichi2.anki.servicelayer.NoteService;
 import com.ichi2.async.DeckTask;
+import com.ichi2.compat.CompatHelper;
 import com.ichi2.libanki.Card;
 import com.ichi2.libanki.Collection;
 import com.ichi2.libanki.Note;
@@ -92,6 +91,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import timber.log.Timber;
 
@@ -102,6 +103,7 @@ import timber.log.Timber;
  *
  * @see <a href="http://ankisrs.net/docs/manual.html#cards">the Anki Desktop manual</a>
  */
+@SuppressWarnings("PMD.AvoidThrowingRawExceptionTypes")
 public class NoteEditor extends AnkiActivity {
 
 //    public static final String SOURCE_LANGUAGE = "SOURCE_LANGUAGE";
@@ -236,13 +238,12 @@ public class NoteEditor extends AnkiActivity {
             } else if (!mEditFields.isEmpty()) {
                 mEditFields.getFirst().requestFocus();
             }
-            if (!mCloseAfter) {
-                if (mProgressDialog != null && mProgressDialog.isShowing()) {
-                    try {
-                        mProgressDialog.dismiss();
-                    } catch (IllegalArgumentException e) {
-                        Timber.e(e, "Note Editor: Error on dismissing progress dialog");
-                    }
+            if (!mCloseAfter && (mProgressDialog != null) && mProgressDialog.isShowing()) {
+                try {
+                    mProgressDialog.dismiss();
+                }
+                catch (IllegalArgumentException e) {
+                    Timber.e(e, "Note Editor: Error on dismissing progress dialog");
                 }
             }
         }
@@ -273,11 +274,6 @@ public class NoteEditor extends AnkiActivity {
                 // RuntimeException occured on adding note
                 closeNoteEditor(DeckPicker.RESULT_DB_ERROR);
             }
-        }
-
-
-        @Override
-        public void onCancelled() {
         }
     };
 
@@ -336,9 +332,7 @@ public class NoteEditor extends AnkiActivity {
         this.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
 
         Intent intent = getIntent();
-        Timber.d("onCollectionLoaded: caller: %d", mCaller);
-
-        SharedPreferences preferences = AnkiDroidApp.getSharedPrefs(getBaseContext());
+        Timber.d("NoteEditor() onCollectionLoaded: caller: %d", mCaller);
 
         registerExternalStorageListener();
 
@@ -404,7 +398,7 @@ public class NoteEditor extends AnkiActivity {
                 mAddNote = true;
                 break;
 
-            case CALLER_CARDEDITOR_INTENT_ADD:
+            case CALLER_CARDEDITOR_INTENT_ADD: {
                 fetchIntentInformation(intent);
                 if (mSourceText == null) {
                     finishWithoutAnimation();
@@ -415,6 +409,9 @@ public class NoteEditor extends AnkiActivity {
                     return;
                 }
                 mAddNote = true;
+                break;
+            }
+            default:
                 break;
         }
 
@@ -535,7 +532,7 @@ public class NoteEditor extends AnkiActivity {
         });
 
         if (!mAddNote && mCurrentEditedCard != null) {
-            Timber.i("NoteEditor:: Edit note activity successfully started with card id %d", mCurrentEditedCard.getId());
+            Timber.i("onCollectionLoaded() Edit note activity successfully started with card id %d", mCurrentEditedCard.getId());
         }
 
         //set focus to FieldEditText 'first' on startup like Anki desktop
@@ -570,11 +567,9 @@ public class NoteEditor extends AnkiActivity {
                 break;
 
             case KeyEvent.KEYCODE_D:
-                if (event.isCtrlPressed()) {
-                    //null check in case Spinner is moved into options menu in the future
-                    if (mNoteDeckSpinner != null) {
+                //null check in case Spinner is moved into options menu in the future
+                if (event.isCtrlPressed() && (mNoteDeckSpinner != null)) {
                         mNoteDeckSpinner.performClick();
-                    }
                 }
                 break;
 
@@ -585,10 +580,8 @@ public class NoteEditor extends AnkiActivity {
                 break;
 
             case KeyEvent.KEYCODE_N:
-                if (event.isCtrlPressed()) {
-                    if (mNoteTypeSpinner != null) {
+                if (event.isCtrlPressed() && (mNoteTypeSpinner != null)) {
                         mNoteTypeSpinner.performClick();
-                    }
                 }
                 break;
 
@@ -596,6 +589,8 @@ public class NoteEditor extends AnkiActivity {
                 if (event.isCtrlPressed() && event.isShiftPressed()) {
                     showTagsDialog();
                 }
+                break;
+            default:
                 break;
         }
 
@@ -624,7 +619,7 @@ public class NoteEditor extends AnkiActivity {
                 second = "";
             }
             // Some users add cards via SEND intent from clipboard. In this case SUBJECT is empty
-            if (first.equals("")) {
+            if ("".equals(first)) {
                 // Assume that if only one field was sent then it should be the front
                 first = second;
                 second = "";
@@ -644,7 +639,7 @@ public class NoteEditor extends AnkiActivity {
         for (int i = 0; i < notepad_lines.length; i++) {
             if (notepad_lines[i].startsWith("[") && notepad_lines[i].endsWith("]")) {
                 category = notepad_lines[i].substring(1, notepad_lines[i].length() - 1);
-                if (category.equals("default")) {
+                if ("default".equals(category)) {
                     if (notepad_lines.length > i + 1) {
                         String[] entry_lines = notepad_lines[i + 1].split(":");
                         if (entry_lines.length > 1) {
@@ -695,10 +690,7 @@ public class NoteEditor extends AnkiActivity {
             return true;
         }
         // changed tags?
-        if (mTagsEdited) {
-            return true;
-        }
-        return false;
+        return mTagsEdited;
     }
 
 
@@ -857,11 +849,6 @@ public class NoteEditor extends AnkiActivity {
             menu.findItem(R.id.action_copy_card).setVisible(false);
         } else {
             menu.findItem(R.id.action_add_card_from_card_editor).setVisible(true);
-            menu.findItem(R.id.action_reset_card_progress).setVisible(true);
-            menu.findItem(R.id.action_reschedule_card).setVisible(true);
-            if (mCurrentEditedCard.getType() == Card.TYPE_NEW) {
-                menu.findItem(R.id.action_reposition_card).setVisible(true);
-            }
         }
         if (mEditFields != null) {
             for (int i = 0; i < mEditFields.size(); i++) {
@@ -879,7 +866,6 @@ public class NoteEditor extends AnkiActivity {
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        Resources res = getResources();
         switch (item.getItemId()) {
             case android.R.id.home:
                 Timber.i("NoteEditor:: Home button pressed");
@@ -892,7 +878,7 @@ public class NoteEditor extends AnkiActivity {
                 return true;
 
             case R.id.action_add_card_from_card_editor:
-            case R.id.action_copy_card:
+            case R.id.action_copy_card: {
                 Timber.i("NoteEditor:: Copy or add card button pressed");
                 Intent intent = new Intent(NoteEditor.this, NoteEditor.class);
                 intent.putExtra(EXTRA_CALLER, CALLER_CARDEDITOR);
@@ -902,38 +888,7 @@ public class NoteEditor extends AnkiActivity {
                 }
                 startActivityForResultWithAnimation(intent, REQUEST_ADD, ActivityTransitionAnimation.LEFT);
                 return true;
-
-            case R.id.action_reset_card_progress: {
-                Timber.i("NoteEditor:: Reset progress button pressed");
-                // Show confirmation dialog before resetting card progress
-                ConfirmationDialog dialog = new ConfirmationDialog();
-                String title = res.getString(R.string.reset_card_dialog_title);
-                String message = res.getString(R.string.reset_card_dialog_message);
-                dialog.setArgs(title, message);
-                Runnable confirm = new Runnable() {
-                    @Override
-                    public void run() {
-                        Timber.i("NoteEditor:: OK button pressed");
-                        getCol().getSched().forgetCards(new long[]{mCurrentEditedCard.getId()});
-                        getCol().reset();
-                        mReloadRequired = true;
-                        UIUtils.showThemedToast(NoteEditor.this,
-                                getResources().getString(R.string.reset_card_dialog_acknowledge), true);
-                    }
-                };
-                dialog.setConfirm(confirm);
-                showDialogFragment(dialog);
-                return true;
             }
-            case R.id.action_reschedule_card:
-                Timber.i("NoteEditor:: Reschedule button pressed");
-                showDialogFragment(NoteEditorRescheduleCard.newInstance());
-                return true;
-            case R.id.action_reposition_card:
-                Timber.i("NoteEditor:: Reposition button pressed");
-                showDialogFragment(NoteEditorRepositionCard.newInstance());
-                return true;
-
             default:
                 return super.onOptionsItemSelected(item);
 
@@ -979,12 +934,9 @@ public class NoteEditor extends AnkiActivity {
                 .content(R.string.discard_unsaved_changes)
                 .positiveText(R.string.dialog_ok)
                 .negativeText(R.string.dialog_cancel)
-                .callback(new MaterialDialog.ButtonCallback() {
-                    @Override
-                    public void onPositive(MaterialDialog dialog) {
-                        Timber.i("NoteEditor:: OK button pressed to confirm discard changes");
-                        closeNoteEditor();
-                    }
+                .onPositive((dialog, which) -> {
+                    Timber.i("NoteEditor:: OK button pressed to confirm discard changes");
+                    closeNoteEditor();
                 })
                 .build().show();
     }
@@ -1031,31 +983,13 @@ public class NoteEditor extends AnkiActivity {
         }
     }
 
-    public void onRescheduleCard(int days) {
-        Timber.i("Reschedule card");
-        getCol().getSched().reschedCards(new long[] { mCurrentEditedCard.getId() }, days, days);
-        getCol().reset();
-        mReloadRequired = true;
-        UIUtils.showThemedToast(NoteEditor.this,
-                getResources().getString(R.string.reschedule_card_dialog_acknowledge), true);
-    }
-
-    public void onRepositionCard(int position) {
-        Timber.i("Reposition card");
-        getCol().getSched().sortCards(new long[] { mCurrentEditedCard.getId() }, position, 1, false, true);
-        getCol().reset();
-        mReloadRequired = true;
-        UIUtils.showThemedToast(NoteEditor.this,
-                getResources().getString(R.string.reposition_card_dialog_acknowledge), true);
-    }
-
     private void showTagsDialog() {
         if (mSelectedTags == null) {
             mSelectedTags = new ArrayList<>();
         }
         ArrayList<String> tags = new ArrayList<>(getCol().getTags().all());
         ArrayList<String> selTags = new ArrayList<>(mSelectedTags);
-        TagsDialog dialog = com.ichi2.anki.dialogs.TagsDialog.newInstance(TagsDialog.TYPE_ADD_TAG, selTags,
+        TagsDialog dialog = TagsDialog.newInstance(TagsDialog.TYPE_ADD_TAG, selTags,
                 tags);
         dialog.setTagsDialogListener(new TagsDialogListener() {
             @Override
@@ -1075,12 +1009,16 @@ public class NoteEditor extends AnkiActivity {
         // Pass the model ID
         try {
             intent.putExtra("modelId", getCurrentlySelectedModel().getLong("id"));
+            Timber.d("showCardTemplateEditor() for model %s", intent.getLongExtra("modelId", -1L));
         } catch (JSONException e) {
            throw new RuntimeException(e);
         }
-        // Also pass the card ID if not adding new note
+        // Also pass the note id and ord if not adding new note
         if (!mAddNote) {
             intent.putExtra("noteId", mCurrentEditedCard.note().getId());
+            Timber.d("showCardTemplateEditor() with note %s", mCurrentEditedCard.note().getId());
+            intent.putExtra("ordId", mCurrentEditedCard.getOrd());
+            Timber.d("showCardTemplateEditor() with ord %s", mCurrentEditedCard.getOrd());
         }
         startActivityForResultWithAnimation(intent, REQUEST_TEMPLATE_EDIT, ActivityTransitionAnimation.LEFT);
     }
@@ -1088,6 +1026,7 @@ public class NoteEditor extends AnkiActivity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        Timber.d("onActivityResult() with request/result: %s/%s", requestCode, resultCode);
         super.onActivityResult(requestCode, resultCode, data);
 
         if (resultCode == DeckPicker.RESULT_DB_ERROR) {
@@ -1095,12 +1034,13 @@ public class NoteEditor extends AnkiActivity {
         }
 
         switch (requestCode) {
-            case REQUEST_ADD:
+            case REQUEST_ADD: {
                 if (resultCode != RESULT_CANCELED) {
                     mChanged = true;
                 }
                 break;
-            case REQUEST_MULTIMEDIA_EDIT:
+            }
+            case REQUEST_MULTIMEDIA_EDIT: {
                 if (resultCode != RESULT_CANCELED) {
                     Collection col = getCol();
                     Bundle extras = data.getExtras();
@@ -1128,11 +1068,23 @@ public class NoteEditor extends AnkiActivity {
                     mChanged = true;
                 }
                 break;
-            case REQUEST_TEMPLATE_EDIT:
-                if (resultCode == RESULT_OK) {
+            }
+            case REQUEST_TEMPLATE_EDIT: {
+                    // Model can change regardless of exit type - update ourselves and CardBrowser
                     mReloadRequired = true;
-                }
-                updateCards(mEditorNote.model());
+                    mEditorNote.reloadModel();
+                    if (!mEditorNote.cards().contains(mCurrentEditedCard)) {
+                        Timber.d("onActivityResult() template edit return - current card is gone");
+                        UIUtils.showSimpleSnackbar(this, R.string.template_for_current_card_deleted, false);
+                        closeNoteEditor();
+                    } else {
+                        Timber.d("onActivityResult() template edit return - current card exists");
+                        // reload current card - the template ordinals are possibly different post-edit
+                        mCurrentEditedCard = getCol().getCard(mCurrentEditedCard.getId());
+                        updateCards(mEditorNote.model());
+                    }
+                break;
+            }
         }
     }
 
@@ -1163,13 +1115,20 @@ public class NoteEditor extends AnkiActivity {
         Typeface mCustomTypeface = null;
         SharedPreferences preferences = AnkiDroidApp.getSharedPrefs(getBaseContext());
         String customFont = preferences.getString("browserEditorFont", "");
-        if (!customFont.equals("")) {
+        if (!"".equals(customFont)) {
             mCustomTypeface = AnkiFont.getTypeface(this, customFont);
         }
 
         for (int i = 0; i < fields.length; i++) {
             View editline_view = getLayoutInflater().inflate(R.layout.card_multimedia_editline, null);
             FieldEditText newTextbox = (FieldEditText) editline_view.findViewById(R.id.id_note_editText);
+
+            // Use custom implementation of ActionMode.Callback customize selection and insert menus
+            ActionModeCallback actionModeCallback = new ActionModeCallback(newTextbox);
+            newTextbox.setCustomSelectionActionModeCallback(actionModeCallback);
+            if (Build.VERSION.SDK_INT >= 23) {
+                newTextbox.setCustomInsertionActionModeCallback(actionModeCallback);
+            }
 
             initFieldEditText(newTextbox, i, fields[i], mCustomTypeface, !editModelMode);
 
@@ -1218,42 +1177,42 @@ public class NoteEditor extends AnkiActivity {
                     PopupMenuWithIcons popup = new PopupMenuWithIcons(NoteEditor.this, v, false);
                     MenuInflater inflater = popup.getMenuInflater();
                     inflater.inflate(R.menu.popupmenu_multimedia_options, popup.getMenu());
-                    popup.setOnMenuItemClickListener(new OnMenuItemClickListener() {
-                        @Override
-                        public boolean onMenuItemClick(MenuItem item) {
-                            IMultimediaEditableNote mNote = NoteService.createEmptyNote(mEditorNote.model());
-                            NoteService.updateMultimediaNoteFromJsonNote(col, mEditorNote, mNote);
-                            IField field;
-                            switch (item.getItemId()) {
-                                case R.id.menu_multimedia_audio:
-                                    Timber.i("NoteEditor:: Record audio button pressed");
-                                    field = new AudioField();
-                                    mNote.setField(index, field);
-                                    startMultimediaFieldEditor(index, mNote, field);
-                                    return true;
-                                case R.id.menu_multimedia_photo:
-                                    Timber.i("NoteEditor:: Add image button pressed");
-                                    field = new ImageField();
-                                    mNote.setField(index, field);
-                                    startMultimediaFieldEditor(index, mNote, field);
-                                    return true;
-                                case R.id.menu_multimedia_text:
-                                    Timber.i("NoteEditor:: Advanced editor button pressed");
-                                    field = new TextField();
-                                    field.setText(mEditFields.get(index).getText().toString());
-                                    mNote.setField(index, field);
-                                    startMultimediaFieldEditor(index, mNote, field);
-                                    return true;
-                                case R.id.menu_multimedia_cloze:
-                                    FieldEditText fieldEditText = mEditFields.get(index);
-                                    String text = fieldEditText.getText().toString();
-                                    int selectionStart = fieldEditText.getSelectionStart();
-                                    int selectionEnd = fieldEditText.getSelectionEnd();
-                                    fieldEditText.setText(insertClozeAround(text, selectionStart, selectionEnd));
-                                    return true;
-                                default:
-                                    return false;
+                    popup.setOnMenuItemClickListener(item -> {
+                        IMultimediaEditableNote mNote = NoteService.createEmptyNote(mEditorNote.model());
+                        NoteService.updateMultimediaNoteFromJsonNote(col, mEditorNote, mNote);
+                        IField field;
+                        switch (item.getItemId()) {
+                            case R.id.menu_multimedia_audio: {
+                                Timber.i("NoteEditor:: Record audio button pressed");
+                                field = new AudioRecordingField();
+                                mNote.setField(index, field);
+                                startMultimediaFieldEditor(index, mNote, field);
+                                return true;
                             }
+                            case R.id.menu_multimedia_audio_clip: {
+                                Timber.i("NoteEditor:: Add audio clip button pressed");
+                                field = new AudioClipField();
+                                mNote.setField(index, field);
+                                startMultimediaFieldEditor(index, mNote, field);
+                                return true;
+                            }
+                            case R.id.menu_multimedia_photo: {
+                                Timber.i("NoteEditor:: Add image button pressed");
+                                field = new ImageField();
+                                mNote.setField(index, field);
+                                startMultimediaFieldEditor(index, mNote, field);
+                                return true;
+                            }
+                            case R.id.menu_multimedia_text: {
+                                Timber.i("NoteEditor:: Advanced editor button pressed");
+                                field = new TextField();
+                                field.setText(mEditFields.get(index).getText().toString());
+                                mNote.setField(index, field);
+                                startMultimediaFieldEditor(index, mNote, field);
+                                return true;
+                            }
+                            default:
+                                return false;
                         }
                     });
                     popup.show();
@@ -1262,58 +1221,46 @@ public class NoteEditor extends AnkiActivity {
         });
     }
 
-    private String insertClozeAround(String text, int selectionStart, int selectionEnd) {
-        int selectionMin = Math.min(selectionStart, selectionEnd);
-        int selectionMax = Math.max(selectionStart, selectionEnd);
-        return text.substring(0, selectionMin) + "{{c1::" + text.substring(selectionMin, selectionMax) + "}}" + text.substring(selectionMax);
-    }
-
 
     private void setRemapButtonListener(ImageButton remapButton, final int newFieldIndex) {
-        remapButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Timber.i("NoteEditor:: Remap button pressed for new field %d", newFieldIndex);
-                // Show list of fields from the original note which we can map to
-                PopupMenu popup = new PopupMenu(NoteEditor.this, v);
-                final String[][] items = mEditorNote.items();
-                for (int i = 0; i < items.length; i++) {
-                    popup.getMenu().add(Menu.NONE, i, Menu.NONE, items[i][0]);
-                }
-                // Add "nothing" at the end of the list
-                popup.getMenu().add(Menu.NONE, items.length, Menu.NONE, R.string.nothing);
-                popup.setOnMenuItemClickListener(new OnMenuItemClickListener() {
-                    @Override
-                    public boolean onMenuItemClick(MenuItem item) {
-                        // Get menu item id
-                        Integer idx = item.getItemId();
-                        Timber.i("NoteEditor:: User chose to remap to old field %d", idx);
-                        // Retrieve any existing mappings between newFieldIndex and idx
-                        Integer previousMapping = getKeyByValue(mModelChangeFieldMap, newFieldIndex);
-                        Integer mappingConflict = mModelChangeFieldMap.get(idx);
-                        // Update the mapping depending on any conflicts
-                        if (idx == items.length && previousMapping != null) {
-                            // Remove the previous mapping if None selected
-                            mModelChangeFieldMap.remove(previousMapping);
-                        } else if (idx < items.length && mappingConflict != null && previousMapping != null && newFieldIndex != mappingConflict) {
-                            // Swap the two mappings if there was a conflict and previous mapping
-                            mModelChangeFieldMap.put(previousMapping, mappingConflict);
-                            mModelChangeFieldMap.put(idx, newFieldIndex);
-                        } else if (idx < items.length && mappingConflict != null) {
-                            // Set the conflicting field to None if no previous mapping to swap into it
-                            mModelChangeFieldMap.remove(previousMapping);
-                            mModelChangeFieldMap.put(idx, newFieldIndex);
-                        } else if (idx < items.length) {
-                            // Can simply set the new mapping if no conflicts
-                            mModelChangeFieldMap.put(idx, newFieldIndex);
-                        }
-                        // Reload the fields                     
-                        updateFieldsFromMap(getCurrentlySelectedModel());
-                        return true;
-                    }
-                });
-                popup.show();
+        remapButton.setOnClickListener(v -> {
+            Timber.i("NoteEditor:: Remap button pressed for new field %d", newFieldIndex);
+            // Show list of fields from the original note which we can map to
+            PopupMenu popup = new PopupMenu(NoteEditor.this, v);
+            final String[][] items = mEditorNote.items();
+            for (int i = 0; i < items.length; i++) {
+                popup.getMenu().add(Menu.NONE, i, Menu.NONE, items[i][0]);
             }
+            // Add "nothing" at the end of the list
+            popup.getMenu().add(Menu.NONE, items.length, Menu.NONE, R.string.nothing);
+            popup.setOnMenuItemClickListener(item -> {
+                // Get menu item id
+                Integer idx = item.getItemId();
+                Timber.i("NoteEditor:: User chose to remap to old field %d", idx);
+                // Retrieve any existing mappings between newFieldIndex and idx
+                Integer previousMapping = getKeyByValue(mModelChangeFieldMap, newFieldIndex);
+                Integer mappingConflict = mModelChangeFieldMap.get(idx);
+                // Update the mapping depending on any conflicts
+                if (idx == items.length && previousMapping != null) {
+                    // Remove the previous mapping if None selected
+                    mModelChangeFieldMap.remove(previousMapping);
+                } else if (idx < items.length && mappingConflict != null && previousMapping != null && newFieldIndex != mappingConflict) {
+                    // Swap the two mappings if there was a conflict and previous mapping
+                    mModelChangeFieldMap.put(previousMapping, mappingConflict);
+                    mModelChangeFieldMap.put(idx, newFieldIndex);
+                } else if (idx < items.length && mappingConflict != null) {
+                    // Set the conflicting field to None if no previous mapping to swap into it
+                    mModelChangeFieldMap.remove(previousMapping);
+                    mModelChangeFieldMap.put(idx, newFieldIndex);
+                } else if (idx < items.length) {
+                    // Can simply set the new mapping if no conflicts
+                    mModelChangeFieldMap.put(idx, newFieldIndex);
+                }
+                // Reload the fields
+                updateFieldsFromMap(getCurrentlySelectedModel());
+                return true;
+            });
+            popup.show();
         });
     }
 
@@ -1348,11 +1295,13 @@ public class NoteEditor extends AnkiActivity {
 
             @Override
             public void beforeTextChanged(CharSequence arg0, int arg1, int arg2, int arg3) {
+                // do nothing
             }
 
 
             @Override
             public void onTextChanged(CharSequence arg0, int arg1, int arg2, int arg3) {
+                // do nothing
             }
         });
         editText.setEnabled(enabled);
@@ -1487,10 +1436,12 @@ public class NoteEditor extends AnkiActivity {
 
     /** Update the list of card templates for current note type */
     private void updateCards(JSONObject model) {
+        Timber.d("updateCards()");
         try {
             JSONArray tmpls = model.getJSONArray("tmpls");
             String cardsList = "";
             // Build comma separated list of card names
+            Timber.d("updateCards() template count is %s", tmpls.length());
             for (int i = 0; i < tmpls.length(); i++) {
                 String name = tmpls.getJSONObject(i).optString("name");
                 // If more than one card then make currently selected card underlined
@@ -1507,7 +1458,7 @@ public class NoteEditor extends AnkiActivity {
             if (!mAddNote && tmpls.length() < mEditorNote.model().getJSONArray("tmpls").length()) {
                 cardsList = "<font color='red'>" + cardsList + "</font>";
             }
-            mCardsButton.setText(Html.fromHtml(getResources().getString(R.string.CardEditorCards, cardsList)));
+            mCardsButton.setText(CompatHelper.getCompat().fromHtml(getResources().getString(R.string.CardEditorCards, cardsList)));
         } catch (JSONException e) {
             throw new RuntimeException(e);
         }
@@ -1730,6 +1681,81 @@ public class NoteEditor extends AnkiActivity {
         @Override
         public void onNothingSelected(AdapterView<?> parent) {
             // Do Nothing
+        }
+    }
+
+    /**
+     * Custom ActionMode.Callback implementation for adding and handling cloze deletion action
+     * button in the text selection menu.
+     */
+    @TargetApi(23)
+    private class ActionModeCallback implements ActionMode.Callback {
+        private FieldEditText mTextBox;
+        private int mMenuId = View.generateViewId();
+        private Pattern mClozeRegexPattern = Pattern.compile("\\{\\{c(\\d+)::");
+
+        ActionModeCallback(FieldEditText textBox) {
+            super();
+            mTextBox = textBox;
+        }
+
+        @Override
+        public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+            return true;
+        }
+
+        @Override
+        public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+            // Adding the cloze deletion floating context menu item, but only once.
+            if (menu.findItem(mMenuId) == null) {
+                menu.add(Menu.NONE, mMenuId, Menu.NONE, R.string.multimedia_editor_popup_cloze);
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        @Override
+        public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
+            if (item.getItemId() == mMenuId) {
+                // get the current text and selection locations
+                int selectionStart = mTextBox.getSelectionStart();
+                int selectionEnd = mTextBox.getSelectionEnd();
+                String text = mTextBox.getText().toString();
+
+                // Split the text in the places where the cloze deletion will be inserted
+                String beforeText = text.substring(0, selectionStart);
+                String selectedText = text.substring(selectionStart, selectionEnd);
+                String afterText = text.substring(selectionEnd);
+
+                // Find the largest existing cloze deletion id
+                Matcher matcher = mClozeRegexPattern.matcher(text);
+                int highestClozeId = 0;
+                while (matcher.find()) {
+                    int detectedClozeId = Integer.parseInt(matcher.group(1));
+                    if (detectedClozeId > highestClozeId) {
+                        highestClozeId = detectedClozeId;
+                    }
+                }
+
+                // Format the cloze deletion open bracket
+                String clozeOpenBracket = "{{c" + (highestClozeId + 1) + "::";
+
+                // Update text field with updated text and selection
+                mTextBox.setText(beforeText + clozeOpenBracket + selectedText + "}}" + afterText);
+                int clozeOpenSize = clozeOpenBracket.length();
+                mTextBox.setSelection(selectionStart+clozeOpenSize, selectionEnd+clozeOpenSize);
+
+                mode.finish();
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        @Override
+        public void onDestroyActionMode(ActionMode mode) {
+            // Left empty on purpose
         }
     }
 }

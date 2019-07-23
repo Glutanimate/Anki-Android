@@ -41,8 +41,9 @@ import java.util.regex.Pattern;
  * and sections are only ever considered to be String objects. Tests have shown that strings are the
  * only data type used, and thus code that handles anything else has been omitted.
  */
+@SuppressWarnings({"PMD.AvoidReassigningParameters","PMD.NPathComplexity","PMD.MethodNamingConventions"})
 public class Template {
-    public static final String clozeReg = "(?s)\\{\\{c%s::(.*?)(::(.*?))?\\}\\}";
+    public static final String clozeReg = "(?si)\\{\\{(c)%s::(.*?)(::(.*?))?\\}\\}";
     private static final Pattern fHookFieldMod = Pattern.compile("^(.*?)(?:\\((.*)\\))?$");
     private static final Pattern fClozeSection = Pattern.compile("c[qa]:(\\d+):(.+)");
 
@@ -167,11 +168,11 @@ public class Template {
             String replacement;
             if (tag_type == null) {
                 replacement = render_unescaped(tag_name, context);
-            } else if (tag_type.equals("{")) {
+            } else if ("{".equals(tag_type)) {
                 replacement = render_tag(tag_name, context);
-            } else if (tag_type.equals("!")) {
+            } else if ("!".equals(tag_type)) {
                 replacement = render_comment();
-            } else if (tag_type.equals("=")) {
+            } else if ("=".equals(tag_type)) {
                 replacement = render_delimiter(tag_name);
             } else {
                 return "{{invalid template}}";
@@ -210,7 +211,7 @@ public class Template {
         String extra = null;
         List<String> mods;
         String tag;
-        if (parts.size() == 1 || parts.get(0).equals("")) {
+        if (parts.size() == 1 || "".equals(parts.get(0))) {
             return String.format("{unknown field %s}", tag_name);
         } else {
             mods = parts.subList(0, parts.size() - 1);
@@ -231,7 +232,7 @@ public class Template {
             // the list remains in the same order.
             @Override
             public int compare(String lhs, String rhs) {
-                if (lhs.equals("type")) {
+                if ("type".equals(lhs)) {
                     return 0;
                 } else {
                     return 1;
@@ -242,14 +243,14 @@ public class Template {
         for (String mod : mods) {
             //Timber.d("Models.get():: Processing field: modifier=%s, extra=%s, tag=%s, txt=%s", mod, extra, tag, txt);
             // built-in modifiers
-            if (mod.equals("text")) {
+            if ("text".equals(mod)) {
                 // strip html
                 if (!TextUtils.isEmpty(txt)) {
                     txt = Utils.stripHTML(txt);
                 } else {
                     txt = "";
                 }
-            } else if (mod.equals("type")) {
+            } else if ("type".equals(mod)) {
                 // type answer field; convert it to [[type:...]] for the gui code
                 // to process
                 return String.format(Locale.US, "[[%s]]", tag_name);
@@ -284,28 +285,83 @@ public class Template {
     }
 
     private static String clozeText(String txt, String ord, char type) {
-        Matcher m = Pattern.compile(String.format(Locale.US, clozeReg, ord)).matcher(txt);
-        if (!m.find()) {
+        if (!Pattern.compile(String.format(Locale.US, clozeReg, ord)).matcher(txt).find()) {
             return "";
         }
-        m.reset();
+
+        txt = removeFormattingFromMathjax(txt, ord);
+        Matcher m = Pattern.compile(String.format(Locale.US, clozeReg, ord)).matcher(txt);
+
         StringBuffer repl = new StringBuffer();
         while (m.find()) {
             // replace chosen cloze with type
+            String buf;
             if (type == 'q') {
-                if (!TextUtils.isEmpty(m.group(3))) {
-                    m.appendReplacement(repl, "<span class=cloze>[$3]</span>");
+                if (!TextUtils.isEmpty(m.group(4))) {
+                    buf = "[" + m.group(4) + "]";
                 } else {
-                    m.appendReplacement(repl, "<span class=cloze>[...]</span>");
+                    buf = "[...]";
                 }
             } else {
-                m.appendReplacement(repl, "<span class=cloze>$1</span>");
+                buf = m.group(2);
             }
+
+            if (m.group(1).equals("c")) {
+                buf = String.format("<span class=cloze>%s</span>", buf);
+            }
+
+            m.appendReplacement(repl, Matcher.quoteReplacement(buf));
         }
         txt = m.appendTail(repl).toString();
         // and display other clozes normally
-        return txt.replaceAll(String.format(Locale.US, clozeReg, "\\d+"), "$1");
+        return txt.replaceAll(String.format(Locale.US, clozeReg, "\\d+"), "$2");
     }
+
+    public static String removeFormattingFromMathjax(String txt, String ord) {
+        // look for clozes wrapped in mathjax, and change {{cx to {{Cx
+
+        String openings[] = {"\\(", "\\["};
+        String closings[] = {"\\)", "\\]"};
+
+        String creg = clozeReg.replace("(?si)", "");
+        StringBuilder regex = new StringBuilder("(?si)(\\\\[");
+        regex.append(Pattern.quote("(["));
+        regex.append("])(.*?)");
+        regex.append(String.format(Locale.US, creg, ord));
+        regex.append("(.*?)(\\\\[");
+        regex.append(Pattern.quote("])"));
+        regex.append("])");
+
+        Matcher m = Pattern.compile(regex.toString()).matcher(txt);
+
+        StringBuffer repl = new StringBuffer();
+        while (m.find()) {
+            boolean enclosed = true;
+
+            for (String closing : closings) {
+                if (m.group(1).contains(closing)) {
+                    enclosed = false;
+                }
+            }
+
+            for (String opening : openings) {
+                if (m.group(7).contains(opening)) {
+                    enclosed = false;
+                }
+            }
+
+            if (!enclosed) {
+                String f = m.group(0);
+                // appendReplacement has an issue with backslashes, so...
+                m.appendReplacement(repl, Matcher.quoteReplacement(m.group(0)));
+            } else {
+                m.appendReplacement(repl, Matcher.quoteReplacement(m.group(0).replace("{{c", "{{C")));
+            }
+            txt = m.appendTail(repl).toString();
+        }
+        return txt;
+    }
+
 
     /**
      * Changes the Mustache delimiter.

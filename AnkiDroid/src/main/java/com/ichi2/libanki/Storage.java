@@ -32,9 +32,10 @@ import java.util.Arrays;
 
 import timber.log.Timber;
 
+@SuppressWarnings({"PMD.AvoidThrowingRawExceptionTypes","PMD.AvoidReassigningParameters",
+        "PMD.NPathComplexity","PMD.MethodNamingConventions","PMD.ExcessiveMethodLength","PMD.OneDeclarationPerLine",
+        "PMD.SwitchStmtsShouldHaveDefault","PMD.EmptyIfStmt","PMD.SimplifyBooleanReturns","PMD.CollapsibleIfStatements"})
 public class Storage {
-    String mPath;
-
 
     /* Open a new or existing collection. Path must be unicode */
     public static Collection Collection(Context context, String path) {
@@ -63,6 +64,8 @@ public class Storage {
         Collection col = new Collection(context, db, path, server, log);
             if (ver < Consts.SCHEMA_VERSION) {
                 _upgrade(col, ver);
+            } else if (ver > Consts.SCHEMA_VERSION) {
+                throw new RuntimeException("This file requires a newer version of Anki.");
             } else if (create) {
                 try {
                     // add in reverse order so basic is default

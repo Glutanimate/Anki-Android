@@ -27,26 +27,30 @@ import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.os.Environment;
 import android.preference.PreferenceManager;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import android.util.Log;
 import android.view.ViewConfiguration;
 import android.webkit.CookieManager;
 
-import com.ichi2.anki.dialogs.AnkiDroidCrashReportDialog;
+import com.ichi2.anki.analytics.AnkiDroidCrashReportDialog;
 import com.ichi2.anki.exception.StorageAccessException;
 import com.ichi2.anki.services.BootService;
 import com.ichi2.compat.CompatHelper;
 import com.ichi2.utils.LanguageUtil;
+import com.ichi2.anki.analytics.UsageAnalytics;
 
 import org.acra.ACRA;
-import org.acra.ACRAConfigurationException;
 import org.acra.ReportField;
-import org.acra.ReportingInteractionMode;
-import org.acra.annotation.ReportsCrashes;
+import org.acra.annotation.AcraCore;
+import org.acra.annotation.AcraDialog;
+import org.acra.annotation.AcraHttpSender;
+import org.acra.annotation.AcraLimiter;
+import org.acra.annotation.AcraToast;
+import org.acra.config.CoreConfigurationBuilder;
+import org.acra.config.DialogConfigurationBuilder;
+import org.acra.config.ToastConfigurationBuilder;
 import org.acra.sender.HttpSender;
-import org.json.JSONException;
-import org.json.JSONObject;
 
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -58,20 +62,10 @@ import static timber.log.Timber.DebugTree;
 /**
  * Application class.
  */
-@ReportsCrashes(
-        reportDialogClass = AnkiDroidCrashReportDialog.class,
-        httpMethod = HttpSender.Method.PUT,
-        reportType = HttpSender.Type.JSON,
-        formUri = "https://ankidroid.org/acra/report",
-        mode = ReportingInteractionMode.DIALOG,
-        resDialogCommentPrompt =  R.string.empty_string,
-        resDialogTitle =  R.string.feedback_title,
-        resDialogText =  R.string.feedback_default_text,
-        resToastText = R.string.feedback_auto_toast_text,
-        resDialogPositiveButtonText = R.string.feedback_report,
-        additionalSharedPreferences = {"com.ichi2.anki"},
+@AcraCore(
+        buildConfigClass = org.acra.dialog.BuildConfig.class,
         excludeMatchingSharedPreferencesKeys = {"username","hkey"},
-        customReportContent = {
+        reportContent = {
             ReportField.REPORT_ID,
             ReportField.APP_VERSION_CODE,
             ReportField.APP_VERSION_NAME,
@@ -108,16 +102,38 @@ import static timber.log.Timber.DebugTree;
             //ReportField.SETTINGS_SECURE,
             //ReportField.SETTINGS_GLOBAL,
             ReportField.SHARED_PREFERENCES,
-            ReportField.APPLICATION_LOG,
+            //ReportField.APPLICATION_LOG,
             ReportField.MEDIA_CODEC_LIST,
             ReportField.THREAD_DETAILS
             //ReportField.USER_IP
         },
         logcatArguments = { "-t", "100", "-v", "time", "ActivityManager:I", "SQLiteLog:W", AnkiDroidApp.TAG + ":D", "*:S" }
 )
+@AcraDialog(
+        reportDialogClass = AnkiDroidCrashReportDialog.class,
+        resCommentPrompt =  R.string.empty_string,
+        resTitle =  R.string.feedback_title,
+        resText =  R.string.feedback_default_text,
+        resPositiveButtonText = R.string.feedback_report,
+        resIcon = R.drawable.logo_star_144dp
+)
+@AcraHttpSender(
+        httpMethod = HttpSender.Method.PUT,
+        uri = BuildConfig.ACRA_URL
+)
+@AcraToast(
+        resText = R.string.feedback_auto_toast_text
+)
+@AcraLimiter(
+        exceptionClassLimit = 1000,
+        stacktraceLimit = 1
+)
 public class AnkiDroidApp extends Application {
 
     public static final String XML_CUSTOM_NAMESPACE = "http://arbitrary.app.namespace/com.ichi2.anki";
+
+    // ACRA constants used for stored preferences
+    public static final String FEEDBACK_REPORT_KEY = "reportErrorMode";
     public static final String FEEDBACK_REPORT_ASK = "2";
     public static final String FEEDBACK_REPORT_NEVER = "1";
     public static final String FEEDBACK_REPORT_ALWAYS = "0";
@@ -137,13 +153,35 @@ public class AnkiDroidApp extends Application {
      * collections being upgraded to (or after) this version must run an integrity check as it will contain fixes that
      * all collections should have.
      */
-    public static final int CHECK_DB_AT_VERSION = 40;
+    public static final int CHECK_DB_AT_VERSION = 20900148;
 
     /**
      * The latest package version number that included changes to the preferences that requires handling. All
      * collections being upgraded to (or after) this version must update preferences.
      */
     public static final int CHECK_PREFERENCES_AT_VERSION = 20500225;
+
+    /** Our ACRA configurations, initialized during onCreate() */
+    private CoreConfigurationBuilder acraCoreConfigBuilder;
+
+
+    /**
+     * Get the ACRA ConfigurationBuilder - use this followed by setting it to modify the config
+     * @return ConfigurationBuilder for the current ACRA config
+     */
+    public CoreConfigurationBuilder getAcraCoreConfigBuilder() {
+        return acraCoreConfigBuilder;
+    }
+
+
+    /**
+     * Set the ACRA ConfigurationBuilder and <b>re-initialize the ACRA system</b> with the contents
+     * @param acraCoreConfigBuilder the full ACRA config to initialize ACRA with
+     */
+    private void setAcraConfigBuilder(CoreConfigurationBuilder acraCoreConfigBuilder) {
+        this.acraCoreConfigBuilder = acraCoreConfigBuilder;
+        ACRA.init(this, acraCoreConfigBuilder);
+    }
 
 
     /**
@@ -155,29 +193,28 @@ public class AnkiDroidApp extends Application {
         // Get preferences
         SharedPreferences preferences = getSharedPrefs(this);
 
-        // Initialize crash reporting module
-        ACRA.init(this);
-
         // Setup logging and crash reporting
+        acraCoreConfigBuilder = new CoreConfigurationBuilder(this);
         if (BuildConfig.DEBUG) {
             // Enable verbose error logging and do method tracing to put the Class name as log tag
             Timber.plant(new DebugTree());
-            // Disable crash reporting
-            setAcraReportingMode(FEEDBACK_REPORT_NEVER);
-            preferences.edit().putString("reportErrorMode", FEEDBACK_REPORT_NEVER).commit();
-            // Use a wider logcat filter incase crash reporting manually re-enabled
-            String [] logcatArgs = { "-t", "300", "-v", "long", "ACRA:S"};
-            ACRA.getConfig().setLogcatArguments(logcatArgs);
+
+            setDebugACRAConfig(preferences);
         } else {
             Timber.plant(new ProductionCrashReportingTree());
-            // Enable or disable crash reporting based on user setting
-            setAcraReportingMode(preferences.getString("reportErrorMode", FEEDBACK_REPORT_ASK));
+            setProductionACRAConfig(preferences);
         }
         Timber.tag(TAG);
 
+        // analytics after ACRA, they both install UncaughtExceptionHandlers but Analytics chains while ACRA does not
+        UsageAnalytics.initialize(this);
+        if (BuildConfig.DEBUG) {
+            UsageAnalytics.setDryRun(true);
+        }
 
         sInstance = this;
         setLanguage(preferences.getString(Preferences.LANGUAGE, ""));
+        NotificationChannels.setup(getApplicationContext());
 
         // Configure WebView to allow file scheme pages to access cookies.
         CookieManager.setAcceptFileSchemeCookies(true);
@@ -204,7 +241,7 @@ public class AnkiDroidApp extends Application {
                 }
             }
         }
-        startService(new Intent(this, BootService.class));
+        new BootService().onReceive(this, new Intent(this, BootService.class));
     }
 
 
@@ -253,47 +290,30 @@ public class AnkiDroidApp extends Application {
 
 
     public static void sendExceptionReport(Throwable e, String origin, String additionalInfo) {
-        //CustomExceptionHandler.getInstance().uncaughtException(null, e, origin, additionalInfo);
-        SharedPreferences prefs = getSharedPrefs(getInstance());
-        // Only send report if we have not sent an identical report before
-        try {
-            JSONObject sentReports = new JSONObject(prefs.getString("sentExceptionReports", "{}"));
-            String hash = getExceptionHash(e);
-            if (sentReports.has(hash)) {
-                Timber.i("The exception report with hash %s has already been sent from this device", hash);
-                return;
-            } else {
-                sentReports.put(hash, true);
-                prefs.edit().putString("sentExceptionReports", sentReports.toString()).apply();
-            }
-        } catch (JSONException e1) {
-            Timber.i(e1, "Could not get cache of sent exception reports");
-        }
+        UsageAnalytics.sendAnalyticsException(e, false);
         ACRA.getErrorReporter().putCustomData("origin", origin);
         ACRA.getErrorReporter().putCustomData("additionalInfo", additionalInfo);
         ACRA.getErrorReporter().handleException(e);
     }
 
-    private static String getExceptionHash(Throwable th) {
-        final StringBuilder res = new StringBuilder();
-        Throwable cause = th;
-        while (cause != null) {
-            final StackTraceElement[] stackTraceElements = cause.getStackTrace();
-            for (final StackTraceElement e : stackTraceElements) {
-                res.append(e.getClassName());
-                res.append(e.getMethodName());
-            }
-            cause = cause.getCause();
-        }
-        return Integer.toHexString(res.toString().hashCode());
+
+    /**
+     * If you want to make sure that the next exception of any time is posted, you need to clear limiter data
+     *
+     * ACRA 5.3.x does this automatically on version upgrade (https://github.com/ACRA/acra/pull/696), until then they blessed deleting file
+     * @param context the context leading to the directory with ACRA limiter data
+     */
+    public static void deleteACRALimiterData(Context context) {
+        context.getFileStreamPath("ACRA-limiter.json").delete();
     }
 
 
     /**
      * Sets the user language.
      *
-     * @param localeCode The locale code of the language to set
+     * @param localeCode The locale code of the language to set, system language if empty
      */
+    @SuppressWarnings("deprecation") // Tracked as #4729 in github
     public static void setLanguage(String localeCode) {
         Configuration config = getInstance().getResources().getConfiguration();
         Locale newLocale = LanguageUtil.getLocale(localeCode);
@@ -320,30 +340,57 @@ public class AnkiDroidApp extends Application {
 
 
     /**
-     * Set the reporting mode for ACRA based on the value of the reportErrorMode preference
-     * @param value value of reportErrorMode preference
+     * Turns ACRA reporting off completely and persists it to shared prefs
+     * But expands logcat search in case developer manually re-enables it
+     *
+     * @param prefs SharedPreferences object the reporting state is persisted in
+     */
+    private void setDebugACRAConfig(SharedPreferences prefs) {
+        // Disable crash reporting
+        setAcraReportingMode(FEEDBACK_REPORT_NEVER);
+        prefs.edit().putString(FEEDBACK_REPORT_KEY, FEEDBACK_REPORT_NEVER).apply();
+        // Use a wider logcat filter in case crash reporting manually re-enabled
+        String [] logcatArgs = { "-t", "300", "-v", "long", "ACRA:S"};
+        setAcraConfigBuilder(getAcraCoreConfigBuilder().setLogcatArguments(logcatArgs));
+    }
+
+
+    /**
+     * Puts ACRA Reporting mode into user-specified mode, with default of "ask first"
+     *
+     * @param prefs SharedPreferences object the reporting state is persisted in
+     */
+    private void setProductionACRAConfig(SharedPreferences prefs) {
+        // Enable or disable crash reporting based on user setting
+        setAcraReportingMode(prefs.getString(FEEDBACK_REPORT_KEY, FEEDBACK_REPORT_ASK));
+    }
+
+
+    /**
+     * Set the reporting mode for ACRA based on the value of the FEEDBACK_REPORT_KEY preference
+     * @param value value of FEEDBACK_REPORT_KEY preference
      */
     public void setAcraReportingMode(String value) {
-        SharedPreferences.Editor editor = ACRA.getACRASharedPreferences().edit();
+        SharedPreferences.Editor editor = getSharedPrefs(this).edit();
         // Set the ACRA disable value
         if (value.equals(FEEDBACK_REPORT_NEVER)) {
-            editor.putBoolean("acra.disable", true);
+            editor.putBoolean(ACRA.PREF_DISABLE_ACRA, true);
         } else {
-            editor.putBoolean("acra.disable", false);
+            editor.putBoolean(ACRA.PREF_DISABLE_ACRA, false);
             // Switch between auto-report via toast and manual report via dialog
-            try {
-                if (value.equals(FEEDBACK_REPORT_ALWAYS)) {
-                    ACRA.getConfig().setMode(ReportingInteractionMode.TOAST);
-                    ACRA.getConfig().setResToastText(R.string.feedback_auto_toast_text);
-                } else if (value.equals(FEEDBACK_REPORT_ASK)) {
-                    ACRA.getConfig().setMode(ReportingInteractionMode.DIALOG);
-                    ACRA.getConfig().setResToastText(R.string.feedback_manual_toast_text);
-                }
-            } catch (ACRAConfigurationException e) {
-                Timber.e("Could not set ACRA report mode");
+            CoreConfigurationBuilder builder = getAcraCoreConfigBuilder();
+            if (value.equals(FEEDBACK_REPORT_ALWAYS)) {
+                // Toast text defaults to always, we just need to disable the dialog
+                builder.getPluginConfigurationBuilder(DialogConfigurationBuilder.class)
+                        .setEnabled(false);
+            } else if (value.equals(FEEDBACK_REPORT_ASK)) {
+                // Both are enabled via annotation, just need to alter toast text
+                builder.getPluginConfigurationBuilder(ToastConfigurationBuilder.class)
+                        .setResText(R.string.feedback_manual_toast_text);
             }
+            setAcraConfigBuilder(builder);
         }
-        editor.commit();
+        editor.apply();
     }
 
     /**
@@ -425,8 +472,13 @@ public class AnkiDroidApp extends Application {
             // because Robolectric runs them on the JVM but on Android the elements are different.
             StackTraceElement[] stackTrace = new Throwable().getStackTrace();
             if (stackTrace.length <= CALL_STACK_INDEX) {
-                throw new IllegalStateException(
-                        "Synthetic stacktrace didn't have enough elements: are you using proguard?");
+
+                // --- this is not present in the Timber.DebugTree copy/paste ---
+                // We are in production and should not crash the app for a logging failure
+                return TAG + " unknown class";
+                //throw new IllegalStateException(
+                //        "Synthetic stacktrace didn't have enough elements: are you using proguard?");
+                // --- end of alteration from upstream Timber.DebugTree.getTag ---
             }
             return createStackElementTag(stackTrace[CALL_STACK_INDEX]);
         }

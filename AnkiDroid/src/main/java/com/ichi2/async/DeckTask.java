@@ -30,6 +30,7 @@ import com.ichi2.anki.CardUtils;
 import com.ichi2.anki.CollectionHelper;
 import com.ichi2.anki.R;
 import com.ichi2.anki.exception.ConfirmModSchemaException;
+import com.ichi2.anki.exception.ImportExportException;
 import com.ichi2.libanki.AnkiPackageExporter;
 import com.ichi2.libanki.Card;
 import com.ichi2.libanki.Collection;
@@ -217,14 +218,14 @@ public class DeckTask extends BaseAsyncTask<DeckTask.TaskData, DeckTask.TaskData
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 // We have been interrupted, return immediately.
-                Timber.e(e, "interrupted while waiting for previous task: %d", mPreviousTask.mType);
+                Timber.d(e, "interrupted while waiting for previous task: %d", mPreviousTask.mType);
                 return null;
             } catch (ExecutionException e) {
                 // Ignore failures in the previous task.
                 Timber.e(e, "previously running task failed with exception: %d", mPreviousTask.mType);
             } catch (CancellationException e) {
                 // Ignore cancellation of previous task
-                Timber.e(e, "previously running task was cancelled: %d", mPreviousTask.mType);
+                Timber.d(e, "previously running task was cancelled: %d", mPreviousTask.mType);
             }
         }
         sLatestInstance = this;
@@ -561,20 +562,19 @@ public class DeckTask extends BaseAsyncTask<DeckTask.TaskData, DeckTask.TaskData
         try {
             col.getDb().getDatabase().beginTransaction();
             try {
+                sHadCardQueue = true;
                 switch (type) {
                     case BURY_CARD:
                         // collect undo information
                         col.markUndo(type, new Object[] { col.getDirty(), note.cards(), card.getId() });
                         // then bury
                         sched.buryCards(new long[] { card.getId() });
-                        sHadCardQueue = true;
                         break;
                     case BURY_NOTE:
                         // collect undo information
                         col.markUndo(type, new Object[] { col.getDirty(), note.cards(), card.getId() });
                         // then bury
                         sched.buryNote(note.getId());
-                        sHadCardQueue = true;
                         break;
                     case SUSPEND_CARD:
                         // collect undo information
@@ -585,7 +585,6 @@ public class DeckTask extends BaseAsyncTask<DeckTask.TaskData, DeckTask.TaskData
                         } else {
                             sched.suspendCards(new long[] { card.getId() });
                         }
-                        sHadCardQueue = true;
                         break;
                     case SUSPEND_NOTE: {
                         // collect undo information
@@ -597,7 +596,6 @@ public class DeckTask extends BaseAsyncTask<DeckTask.TaskData, DeckTask.TaskData
                         col.markUndo(type, new Object[] { cards, card.getId() });
                         // suspend note
                         sched.suspendCards(cids);
-                        sHadCardQueue = true;
                         break;
                     }
 
@@ -607,18 +605,18 @@ public class DeckTask extends BaseAsyncTask<DeckTask.TaskData, DeckTask.TaskData
                         col.markUndo(type, new Object[] { note, allCs, card.getId() });
                         // delete note
                         col.remNotes(new long[] { note.getId() });
-                        sHadCardQueue = true;
                         break;
                     }
                 }
+                // With sHadCardQueue set, getCard() resets the scheduler prior to getting the next card
                 publishProgress(new TaskData(getCard(col.getSched()), 0));
                 col.getDb().getDatabase().setTransactionSuccessful();
             } finally {
                 col.getDb().getDatabase().endTransaction();
             }
         } catch (RuntimeException e) {
-            Timber.e(e, "doInBackgroundSuspendCard - RuntimeException on suspending card");
-            AnkiDroidApp.sendExceptionReport(e, "doInBackgroundSuspendCard");
+            Timber.e(e, "doInBackgroundDismissNote - RuntimeException on dismissing note, dismiss type %s", type);
+            AnkiDroidApp.sendExceptionReport(e, "doInBackgroundDismissNote");
             return new TaskData(false);
         }
         return new TaskData(true);
@@ -754,6 +752,33 @@ public class DeckTask extends BaseAsyncTask<DeckTask.TaskData, DeckTask.TaskData
 
                         break;
                     }
+
+                    case RESCHEDULE_CARDS:
+                    case REPOSITION_CARDS:
+                    case RESET_CARDS: {
+                        // collect undo information, sensitive to memory pressure, same for all 3 cases
+                        try {
+                            Timber.d("Saving undo information of type %s on %d cards", type, cards.length);
+                            col.markUndo(type, new Object[] {deepCopyCardArray(cards)});
+                        } catch (CancellationException ce) {
+                            Timber.i(ce, "Cancelled while handling type %s, skipping undo", type);
+                        }
+                        switch (type) {
+                            case RESCHEDULE_CARDS:
+                                sched.reschedCards(cardIds, (Integer) data[2], (Integer) data[2]);
+                                break;
+                            case REPOSITION_CARDS:
+                                sched.sortCards(cardIds, (Integer) data[2], 1, false, true);
+                                break;
+                            case RESET_CARDS:
+                                sched.forgetCards(cardIds);
+                                break;
+                        }
+                        // In all cases schedule a new card so Reviewer doesn't sit on the old one
+                        col.reset();
+                        publishProgress(new TaskData(getCard(sched), 0));
+                        break;
+                    }
                 }
                 col.getDb().getDatabase().setTransactionSuccessful();
             } finally {
@@ -767,6 +792,22 @@ public class DeckTask extends BaseAsyncTask<DeckTask.TaskData, DeckTask.TaskData
         // pass cards back so more actions can be performed by the caller
         // (querying the cards again is unnecessarily expensive)
         return new TaskData(true, cards);
+    }
+
+    private Card[] deepCopyCardArray(Card[] originals) throws CancellationException {
+        Collection col = CollectionHelper.getInstance().getCol(AnkiDroidApp.getInstance());
+        Card[] copies = new Card[originals.length];
+        for (int i = 0; i < originals.length; i++) {
+            if (isCancelled()) {
+                Timber.i("Cancelled during deep copy, probably memory pressure?");
+                throw new CancellationException("Cancelled during deep copy");
+            }
+
+            // TODO: the performance-naive implementation loads from database instead of working in memory
+            // the high performance version would implement .clone() on Card and test it well
+            copies[i] = new Card(col, originals[i].getId());
+        }
+        return copies;
     }
 
 
@@ -865,7 +906,7 @@ public class DeckTask extends BaseAsyncTask<DeckTask.TaskData, DeckTask.TaskData
             return new TaskData(false);
         }
 
-        long result = col.fixIntegrity();
+        long result = col.fixIntegrity(new ProgressCallback(this, AnkiDroidApp.getAppResources()));
         if (result == -1) {
             return new TaskData(false);
         } else {
@@ -941,7 +982,11 @@ public class DeckTask extends BaseAsyncTask<DeckTask.TaskData, DeckTask.TaskData
         String path = params[0].getString();
         AnkiPackageImporter imp = new AnkiPackageImporter(col, path);
         imp.setProgressCallback(new ProgressCallback(this, res));
-        imp.run();
+        try {
+            imp.run();
+        } catch (ImportExportException e) {
+            return new TaskData(e.getMessage(), true);
+        }
         return new TaskData(new Object[] {imp});
     }
 
@@ -960,7 +1005,7 @@ public class DeckTask extends BaseAsyncTask<DeckTask.TaskData, DeckTask.TaskData
         }
 
         // from anki2.py
-        String colFile = new File(dir, "collection.anki2").getAbsolutePath();
+        String colname = "collection.anki21";
         ZipFile zip;
         try {
             zip = new ZipFile(new File(path), ZipFile.OPEN_READ);
@@ -970,10 +1015,15 @@ public class DeckTask extends BaseAsyncTask<DeckTask.TaskData, DeckTask.TaskData
             return new TaskData(false);
         }
         try {
-            Utils.unzipFiles(zip, dir.getAbsolutePath(), new String[] { "collection.anki2", "media" }, null);
+            // v2 scheduler?
+            if (zip.getEntry(colname) == null) {
+                colname = "collection.anki2";
+            }
+            Utils.unzipFiles(zip, dir.getAbsolutePath(), new String[] { colname, "media" }, null);
         } catch (IOException e) {
             return new TaskData(-2, null, false);
         }
+        String colFile = new File(dir, colname).getAbsolutePath();
         if (!(new File(colFile)).exists()) {
             return new TaskData(-2, null, false);
         }
@@ -1094,6 +1144,9 @@ public class DeckTask extends BaseAsyncTask<DeckTask.TaskData, DeckTask.TaskData
         } catch (JSONException e) {
             Timber.e(e, "JSOnException in doInBackgroundExportApkg");
             return new TaskData(false);
+        } catch (ImportExportException e) {
+            Timber.e(e, "ImportExportException in doInBackgroundExportApkg");
+            return new TaskData(e.getMessage(), true);
         }
         return new TaskData(apkgPath);
     }
@@ -1507,7 +1560,9 @@ public class DeckTask extends BaseAsyncTask<DeckTask.TaskData, DeckTask.TaskData
          * <p>
          * The semantics of the update data depends on the task itself.
          */
-        public abstract void onProgressUpdate(TaskData... values);
+        public void onProgressUpdate(TaskData... values) {
+            // most implementations do nothing with this, provide them a default implementation
+        }
 
 
         @Override
@@ -1527,6 +1582,10 @@ public class DeckTask extends BaseAsyncTask<DeckTask.TaskData, DeckTask.TaskData
             onProgressUpdate(values);
         }
 
+        @Override
+        public void onCancelled() {
+            // most implementations do nothing with this, provide them a default implementation
+        }
     }
 
     /**
